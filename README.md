@@ -1,36 +1,125 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Scalable URL Shortener
+
+A high-performance, scalable URL Shortener backend built with **Next.js 14 App Router**, **PostgreSQL**, **Redis**, and **Prisma ORM**.
+
+## Features
+
+- ⚡ **High-Performance Caching**: Redis (ioredis) caching with 1-hour TTL on redirects for low-latency lookups.
+- 🗄️ **Persistent Relational DB**: PostgreSQL 16 managed via Prisma ORM for structured link and click tracking.
+- 🔗 **Custom Aliases & NanoID Generation**: Supports custom short codes (validated via Zod) or auto-generated 7-character NanoIDs.
+- ⏳ **Link Expiration**: Configurable expiration periods (`1h`, `24h`, `7d`, `never`).
+- 🛡️ **Type-Safe Validation**: Full request schema validation powered by Zod.
+- 🐳 **Containerized Setup**: Ready-to-use Docker Compose for PostgreSQL 16 and Redis 7.
+
+---
+
+## Tech Stack
+
+- **Framework**: [Next.js 14](https://nextjs.org/) (App Router, TypeScript)
+- **Database**: [PostgreSQL 16](https://www.postgresql.org/)
+- **Caching**: [Redis 7](https://redis.io/) via [ioredis](https://github.com/redis/ioredis)
+- **ORM**: [Prisma](https://www.prisma.io/)
+- **Validation**: [Zod](https://zod.dev/)
+- **ID Generator**: [nanoid](https://github.com/ai/nanoid)
+
+---
+
+## Architecture & Flow
+
+```
+[Client] ---> POST /api/links ---> Zod Validation ---> Check / Generate Code ---> Prisma (PostgreSQL) ---> Return Short URL
+[Client] ---> GET /s/:code   ---> Check Redis Cache
+                                      |
+                                      +--> Cache HIT  ---> 302 Redirect to originalUrl
+                                      +--> Cache MISS ---> Prisma DB Lookup ---> (Not found / Expired -> 404)
+                                                                 |
+                                                                 +--> Set Redis Cache (TTL 3600s) ---> 302 Redirect
+```
+
+---
 
 ## Getting Started
 
-First, run the development server:
+### 1. Prerequisites
+- [Node.js 18+](https://nodejs.org/)
+- [Docker](https://www.docker.com/) & Docker Compose
 
+### 2. Clone and Install Dependencies
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+git clone https://github.com/jaydavane207-cyber/url-shortener.git
+cd url-shortener
+npm install
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+### 3. Configure Environment Variables
+Copy `.env.example` to `.env`:
+```bash
+cp .env.example .env
+```
+Ensure `.env` matches your configuration:
+```env
+DATABASE_URL="postgresql://postgres:postgres@localhost:5432/urldb?schema=public"
+REDIS_URL="redis://localhost:6379"
+NEXT_PUBLIC_BASE_URL="http://localhost:3000"
+```
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### 4. Start Infrastructure (Postgres & Redis)
+```bash
+docker compose up -d
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+### 5. Run Database Migrations
+```bash
+npx prisma migrate dev --name init
+```
 
-## Learn More
+### 6. Start the Development Server
+```bash
+npm run dev
+```
+Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-To learn more about Next.js, take a look at the following resources:
+---
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+## API Documentation
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+### 1. Create Short Link
+**`POST /api/links`**
 
-## Deploy on Vercel
+**Request Body:**
+```json
+{
+  "originalUrl": "https://example.com/very/long/url",
+  "customAlias": "my-alias",   // Optional: 3-20 alphanumeric, hyphen, underscore characters
+  "expiresIn": "24h"          // Optional: "1h" | "24h" | "7d" | "never" (default: "never")
+}
+```
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+**Success Response (`201 Created`):**
+```json
+{
+  "shortCode": "my-alias",
+  "shortUrl": "http://localhost:3000/s/my-alias"
+}
+```
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+**Error Responses:**
+- `400 Bad Request`: Validation failure (e.g. invalid URL, invalid alias format).
+- `409 Conflict`: Custom alias is already in use.
+- `500 Internal Server Error`: Unexpected server error.
+
+---
+
+### 2. Redirect to Original URL
+**`GET /s/:code`**
+
+- Checks Redis cache for `short:<code` (Cache HIT -> 302 Redirect).
+- If not cached, looks up in PostgreSQL and populates Redis cache with 3600s TTL.
+- Returns `302 Found` with `Location` header targeting the original URL.
+- Returns `404 Not Found` if the code does not exist or has expired.
+
+---
+
+## License
+
+MIT
