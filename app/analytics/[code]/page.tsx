@@ -111,8 +111,6 @@ export default function AnalyticsPage() {
 
   const fetchStats = useCallback(async () => {
     if (!code) return;
-    setIsLoading(true);
-    setError(null);
     try {
       const res = await fetch(`/api/links/${code}/stats`);
       if (!res.ok) {
@@ -131,8 +129,36 @@ export default function AnalyticsPage() {
   }, [code]);
 
   useEffect(() => {
-    fetchStats();
-  }, [fetchStats]);
+    if (!code) return;
+    let ignore = false;
+    async function load() {
+      try {
+        const res = await fetch(`/api/links/${code}/stats`);
+        if (!res.ok) {
+          const d = await res.json();
+          throw new Error(d.error || "Failed to fetch stats");
+        }
+        const data = await res.json();
+        if (!ignore) {
+          setStats(data);
+        }
+      } catch (e: unknown) {
+        if (!ignore) {
+          const msg = e instanceof Error ? e.message : "Something went wrong";
+          setError(msg);
+          toast.error(msg);
+        }
+      } finally {
+        if (!ignore) {
+          setIsLoading(false);
+        }
+      }
+    }
+    load();
+    return () => {
+      ignore = true;
+    };
+  }, [code]);
 
   const copy = async (text: string) => {
     try {
@@ -160,7 +186,10 @@ export default function AnalyticsPage() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={fetchStats}
+            onClick={() => {
+              setIsLoading(true);
+              fetchStats();
+            }}
             disabled={isLoading}
           >
             <RefreshCw className={`w-4 h-4 ${isLoading ? "animate-spin" : ""}`} />

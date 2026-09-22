@@ -1,51 +1,62 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { z } from 'zod';
 import { nanoid } from 'nanoid';
+import crypto from 'crypto';
 import { prisma } from '@/lib/db';
+import { getAuthUserId } from '@/lib/auth';
+import { createLinkSchema, calculateExpiresAt } from '@/lib/validations';
 
-const createLinkSchema = z.object({
-  originalUrl: z.string().url('Invalid URL format'),
-  customAlias: z
-    .string()
-    .regex(
-      /^[a-zA-Z0-9-_]{3,20}$/,
-      'Custom alias must be 3-20 characters long and contain only letters, numbers, hyphens, or underscores'
-    )
-    .optional()
-    .or(z.literal('')),
-  expiresIn: z.enum(['1h', '24h', '7d', 'never']).default('never').optional(),
-});
-
-function calculateExpiresAt(expiresIn?: '1h' | '24h' | '7d' | 'never'): Date | null {
-  if (!expiresIn || expiresIn === 'never') return null;
-
-  const now = new Date();
-  switch (expiresIn) {
-    case '1h':
-      return new Date(now.getTime() + 60 * 60 * 1000);
-    case '24h':
-      return new Date(now.getTime() + 24 * 60 * 60 * 1000);
-    case '7d':
-      return new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
-    default:
-      return null;
-  }
-}
-
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
+    const { searchParams } = req.nextUrl;
+    const search = searchParams.get('search')?.trim() || '';
+    const folder = searchParams.get('folder')?.trim() || '';
+    const tag = searchParams.get('tag')?.trim() || '';
+    const isFavorite = searchParams.get('isFavorite');
+    const showOnBio = searchParams.get('showOnBio');
+
+    // Build Prisma where conditions
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const where: any = {};
+
+    if (search) {
+      where.OR = [
+        { originalUrl: { contains: search, mode: 'insensitive' } },
+        { shortCode: { contains: search, mode: 'insensitive' } },
+        { title: { contains: search, mode: 'insensitive' } },
+        { tags: { has: search } },
+      ];
+    }
+
+    if (folder && folder !== 'all') {
+      where.folder = folder;
+    }
+
+    if (tag) {
+      where.tags = { has: tag };
+    }
+
+    if (isFavorite === 'true') {
+      where.isFavorite = true;
+    } else if (isFavorite === 'false') {
+      where.isFavorite = false;
+    }
+
+    if (showOnBio === 'true') {
+      where.showOnBio = true;
+    } else if (showOnBio === 'false') {
+      where.showOnBio = false;
+    }
+
     const links = await prisma.link.findMany({
+      where,
       orderBy: { createdAt: 'desc' },
-      take: 50,
-      select: {
-        id: true,
-        originalUrl: true,
-        shortCode: true,
-        expiresAt: true,
-        createdAt: true,
+      take: 100,
+      include: {
+        rules: true,
         _count: { select: { clicks: true } },
       },
     });
+
     return NextResponse.json({ links });
   } catch (error) {
     console.error('Error fetching links:', error);
@@ -65,7 +76,21 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { originalUrl, customAlias, expiresIn } = validation.data;
+    const {
+      originalUrl,
+      customAlias,
+      expiresIn,
+      title,
+      faviconUrl,
+      folder,
+      tags,
+      isFavorite,
+      showOnBio,
+      bioTitle,
+      password,
+      maxClicks,
+      rules,
+    } = validation.data;
 
     let shortCode: string;
 
@@ -82,7 +107,6 @@ export async function POST(req: NextRequest) {
       }
       shortCode = customAlias;
     } else {
-      // Generate a 7-character nanoid ensuring uniqueness
       let isUnique = false;
       let generatedCode = '';
       while (!isUnique) {
@@ -98,12 +122,56 @@ export async function POST(req: NextRequest) {
     }
 
     const expiresAt = calculateExpiresAt(expiresIn);
+    const userId = await getAuthUserId();
+
+    // Default title & favicon if not explicitly provided
+    let finalTitle = title?.trim() || null;
+    let finalFavicon = faviconUrl?.trim() || null;
+
+    try {
+      const parsed = new URL(originalUrl);
+      if (!finalTitle) {
+        finalTitle = parsed.hostname;
+      }
+      if (!finalFavicon) {
+        finalFavicon = `https://www.google.com/s2/favicons?domain=${parsed.hostname}&sz=64`;
+      }
+    } catch {
+      // Ignore URL parsing errors for fallback
+    }
+
+    const passwordHash =
+      password && password.trim() !== ''
+        ? crypto.createHash('sha256').update(password.trim()).digest('hex')
+        : null;
 
     const link = await prisma.link.create({
       data: {
         originalUrl,
         shortCode,
         expiresAt,
+        userId,
+        title: finalTitle,
+        faviconUrl: finalFavicon,
+        folder: folder || 'General',
+        tags: tags || [],
+        isFavorite: isFavorite || false,
+        showOnBio: showOnBio || false,
+        bioTitle: bioTitle?.trim() || null,
+        passwordHash,
+        maxClicks: maxClicks || null,
+        rules: rules && rules.length > 0
+          ? {
+              create: rules.map((r) => ({
+                type: r.type,
+                value: r.value,
+                destinationUrl: r.destinationUrl,
+              })),
+            }
+          : undefined,
+      },
+      include: {
+        rules: true,
       },
     });
 
@@ -111,8 +179,17 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json(
       {
+        id: link.id,
         shortCode: link.shortCode,
         shortUrl: `${baseUrl}/s/${link.shortCode}`,
+        originalUrl: link.originalUrl,
+        title: link.title,
+        faviconUrl: link.faviconUrl,
+        folder: link.folder,
+        tags: link.tags,
+        isFavorite: link.isFavorite,
+        showOnBio: link.showOnBio,
+        rules: link.rules,
       },
       { status: 201 }
     );

@@ -18,6 +18,8 @@ interface LinkItem {
   id: string;
   originalUrl: string;
   shortCode: string;
+  title?: string | null;
+  faviconUrl?: string | null;
   expiresAt: string | null;
   createdAt: string;
   _count: { clicks: number };
@@ -148,12 +150,19 @@ export default function RecentLinks() {
                         className="hover:bg-slate-50/60 transition-colors duration-100"
                       >
                         <td className="px-4 py-3 max-w-[200px]">
-                          <span
-                            title={link.originalUrl}
-                            className="text-slate-600 truncate block"
-                          >
-                            {truncate(link.originalUrl, 45)}
-                          </span>
+                          <div className="space-y-0.5">
+                            {link.title && (
+                              <span className="text-slate-900 font-medium text-xs truncate block" title={link.title}>
+                                {link.title}
+                              </span>
+                            )}
+                            <span
+                              title={link.originalUrl}
+                              className="text-slate-500 text-[11px] truncate block"
+                            >
+                              {truncate(link.originalUrl, 35)}
+                            </span>
+                          </div>
                         </td>
                         <td className="px-4 py-3">
                           <div className="flex items-center gap-1.5">
