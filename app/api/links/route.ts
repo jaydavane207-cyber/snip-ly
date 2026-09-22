@@ -32,6 +32,27 @@ function calculateExpiresAt(expiresIn?: '1h' | '24h' | '7d' | 'never'): Date | n
   }
 }
 
+export async function GET() {
+  try {
+    const links = await prisma.link.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+      select: {
+        id: true,
+        originalUrl: true,
+        shortCode: true,
+        expiresAt: true,
+        createdAt: true,
+        _count: { select: { clicks: true } },
+      },
+    });
+    return NextResponse.json({ links });
+  } catch (error) {
+    console.error('Error fetching links:', error);
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+  }
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
