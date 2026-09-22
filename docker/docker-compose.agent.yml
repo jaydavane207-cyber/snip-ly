@@ -1,0 +1,58 @@
+# Ephemeral Docker Compose configuration for agent sandboxing
+# Enforces directory restrictions, read-only configs, and resource limits
+
+services:
+  agent-runner:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.agent
+    container_name: agent_ephemeral_sandbox
+    restart: "no"
+    working_dir: /workspace
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2048M
+        reservations:
+          cpus: "0.5"
+          memory: 512M
+    environment:
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/urldb?schema=public
+      - REDIS_URL=redis://redis:6379
+      - NEXT_PUBLIC_BASE_URL=http://localhost:3000
+      - NODE_ENV=development
+      - AGENT_ENV=sandboxed
+    volumes:
+      # Base repository mounted as read-only by default
+      - ..:/workspace:ro
+
+      # Directories the agent is explicitly allowed to modify (Read-Write)
+      - ../app:/workspace/app:rw
+      - ../lib:/workspace/lib:rw
+      - ../prisma:/workspace/prisma:rw
+      - ../public:/workspace/public:rw
+      - ../.git:/workspace/.git:rw
+
+      # Core configuration files strictly enforced as read-only
+      - ../package.json:/workspace/package.json:ro
+      - ../package-lock.json:/workspace/package-lock.json:ro
+      - ../tsconfig.json:/workspace/tsconfig.json:ro
+      - ../next.config.mjs:/workspace/next.config.mjs:ro
+      - ../eslint.config.mjs:/workspace/eslint.config.mjs:ro
+      - ../docker-compose.yml:/workspace/docker-compose.yml:ro
+      - ../.env:/workspace/.env:ro
+      - ../.env.example:/workspace/.env.example:ro
+      - ../AGENTS.md:/workspace/AGENTS.md:ro
+
+      # Shared node_modules (read-only for agent to prevent supply-chain tampering)
+      - ../node_modules:/workspace/node_modules:ro
+
+    # Attach to existing infrastructure services if running
+    networks:
+      - default
+
+networks:
+  default:
+    name: project1_default
+    external: true

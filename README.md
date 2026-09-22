@@ -120,6 +120,50 @@ Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ---
 
+## Autonomous Agent Guardrails & Sandboxing
+
+This repository is configured with a strict 3-tier security model for autonomous AI coding agents:
+
+### 1. Ephemeral Containerization
+- **Sandbox Image**: `docker/Dockerfile.agent` (unprivileged `agent` user on Node 20 Alpine).
+- **Directory Restrictions**: Application source (`app/`, `lib/`, `prisma/`, `public/`) is mounted read-write (`:rw`), while root configs (`package.json`, `tsconfig.json`, `next.config.mjs`, `.env`) are mounted **read-only** (`:ro`).
+- **Commands**:
+  ```bash
+  # Linux/WSL/macOS
+  ./scripts/agent-container-run.sh run       # Launch ephemeral container (--rm)
+  ./scripts/agent-container-run.sh respawn   # Terminate dirty container & respawn fresh
+
+  # Windows PowerShell
+  .\scripts\agent-container-run.ps1 run
+  .\scripts\agent-container-run.ps1 respawn
+  ```
+
+### 2. Command Allowlisting
+- **Safe Executor**: All commands executed by an agent must be routed through `node scripts/safe-executor.js <cmd>`.
+- **Allowlisted**: `npm run build`, `npm run lint`, `npm test`, `git status`, `git diff`, `git add`, `git commit`, `npx prisma validate`.
+- **Blocked**: Destructive actions (`rm -rf`), permission modifications (`chmod`), arbitrary outbound network calls (`curl`, `wget`), and direct pushes to `main`.
+
+### 3. Git-Driven State Reversion
+- Agents operate like junior developers:
+  ```bash
+  # 1. Start on an isolated task branch (prevent edits on main)
+  node scripts/agent-task.js start <feature-name>
+
+  # 2. Run automated validation (lint & build)
+  node scripts/agent-task.js verify
+
+  # 3. Commit to agent task branch
+  node scripts/agent-task.js commit "feat: implement feature"
+
+  # 4. Generate Pull Request summary (human review required)
+  node scripts/agent-task.js pr
+
+  # 5. Fast state reversion (wipes broken agent branch and restores clean main in seconds)
+  node scripts/agent-task.js discard
+  ```
+
+---
+
 ## License
 
 MIT

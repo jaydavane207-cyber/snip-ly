@@ -1,0 +1,33 @@
+# Ephemeral Agent Sandbox Container
+# Base image: Node 20 LTS Alpine for minimal attack surface and fast startup
+FROM node:20-alpine
+
+# Install essential build and git tooling
+RUN apk update && apk add --no-cache \
+    git \
+    bash \
+    dumb-init \
+    openssh-client \
+    ca-certificates
+
+# Create non-privileged agent user and group
+RUN addgroup -g 1001 agentgroup && \
+    adduser -D -u 1001 -G agentgroup -s /bin/bash agent
+
+# Set working directory
+WORKDIR /workspace
+
+# Set environment variables
+ENV NODE_ENV=development \
+    CI=true \
+    HOME=/home/agent
+
+# Ensure ownership of the home directory
+RUN chown -R agent:agentgroup /home/agent
+
+# Switch to non-root agent user
+USER agent
+
+# Entrypoint using dumb-init for proper signal handling (instant kill on runaway loop)
+ENTRYPOINT ["/usr/bin/dumb-init", "--"]
+CMD ["/bin/bash"]
