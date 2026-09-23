@@ -1,5 +1,6 @@
 import { prisma } from './db';
 import { redis } from './redis';
+import { triggerWebhook } from './webhook';
 
 export interface RouteRule {
   type: string;
@@ -8,6 +9,11 @@ export interface RouteRule {
 }
 
 export type CachedLinkRule = RouteRule;
+
+export interface SplitDestination {
+  url: string;
+  weight: number;
+}
 
 export interface CachedLinkData {
   id: string;
@@ -18,6 +24,7 @@ export interface CachedLinkData {
   rules: CachedLinkRule[];
   maxClicks?: number | null;
   clickCount?: number;
+  splitDestinations?: SplitDestination[];
 }
 
 export function parseDevice(ua: string): 'mobile' | 'desktop' {
@@ -65,8 +72,40 @@ export function resolveDestination(
 }
 
 /**
+ * Picks a destination from A/B split destinations using weighted random selection.
+ * Returns null if splits are invalid or empty (caller falls back to originalUrl).
+ */
+export function pickSplitDestination(
+  splits: SplitDestination[] | undefined | null
+): string | null {
+  if (!splits || !Array.isArray(splits) || splits.length === 0) return null;
+
+  const valid = splits.filter(
+    (s) => s && typeof s.url === 'string' && s.url.length > 0 && typeof s.weight === 'number' && s.weight > 0
+  );
+  if (valid.length === 0) return null;
+
+  const total = valid.reduce((sum, s) => sum + s.weight, 0);
+  if (total <= 0) return null;
+
+  try {
+    let rand = Math.random() * total;
+    for (const s of valid) {
+      rand -= s.weight;
+      if (rand <= 0) return s.url;
+    }
+    return valid[valid.length - 1].url;
+  } catch {
+    return null;
+  }
+}
+
+const WEBHOOK_MILESTONES = new Set([10, 50, 100, 500, 1000, 5000]);
+
+/**
  * Records a click in PostgreSQL and increments the clickCount on the Link record.
  * Also keeps the Redis cache in sync if maxClicks limit is active.
+ * Fires milestone webhooks without blocking.
  */
 export async function logClickAndIncrement(
   linkId: string,
@@ -81,7 +120,7 @@ export async function logClickAndIncrement(
   const normalizedReferrer = referrer !== 'Direct' && referrer ? referrer : null;
 
   try {
-    await Promise.all([
+    const [, updatedLink] = await Promise.all([
       prisma.click.create({
         data: {
           linkId,
@@ -94,8 +133,30 @@ export async function logClickAndIncrement(
       prisma.link.update({
         where: { id: linkId },
         data: { clickCount: { increment: 1 } },
+        select: { clickCount: true, userId: true, shortCode: true },
       }),
     ]);
+
+    const newCount = updatedLink.clickCount;
+
+    // Fire milestone webhooks without blocking
+    if (WEBHOOK_MILESTONES.has(newCount)) {
+      try {
+        void triggerWebhook(updatedLink.userId, {
+          event: 'milestone',
+          shortCode: updatedLink.shortCode,
+          clickCount: newCount,
+          recentClick: {
+            country: normalizedCountry,
+            device,
+            browser,
+            createdAt: new Date().toISOString(),
+          },
+        });
+      } catch {
+        // Never crash the worker
+      }
+    }
 
     // Keep Redis cache in sync
     try {

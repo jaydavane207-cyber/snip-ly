@@ -25,6 +25,9 @@ import {
   Trash2,
   Globe2,
   Smartphone,
+  Loader2,
+  FlaskConical,
+  Megaphone,
 } from "lucide-react";
 import { QRCodeCanvas } from "qrcode.react";
 import { Button } from "@/components/ui/Button";
@@ -43,6 +46,11 @@ interface SmartRule {
   type: "country" | "device";
   value: string;
   destinationUrl: string;
+}
+
+interface SplitVariant {
+  url: string;
+  weight: number;
 }
 
 const EXPIRY_OPTIONS = [
@@ -67,7 +75,9 @@ export default function ShortenForm() {
 
   // Advanced Options state
   const [isAdvancedOpen, setIsAdvancedOpen] = useState(false);
+  const [isUtmOpen, setIsUtmOpen] = useState(false);
   const [title, setTitle] = useState("");
+  const [description, setDescription] = useState("");
   const [faviconUrl, setFaviconUrl] = useState("");
   const [isFetchingMetadata, setIsFetchingMetadata] = useState(false);
   const [folder, setFolder] = useState("General");
@@ -79,6 +89,19 @@ export default function ShortenForm() {
   const [password, setPassword] = useState("");
   const [maxClicks, setMaxClicks] = useState<string>("");
   const [rules, setRules] = useState<SmartRule[]>([]);
+
+  // UTM state
+  const [utmSource, setUtmSource] = useState("");
+  const [utmMedium, setUtmMedium] = useState("");
+  const [utmCampaign, setUtmCampaign] = useState("");
+
+  // A/B Split state
+  const [splitVariants, setSplitVariants] = useState<SplitVariant[]>([]);
+
+  // AI state
+  const [isAiAliasLoading, setIsAiAliasLoading] = useState(false);
+  const [aiAliasSuggestions, setAiAliasSuggestions] = useState<string[]>([]);
+  const [isAiFillLoading, setIsAiFillLoading] = useState(false);
 
   const handleFetchMetadata = async () => {
     if (!originalUrl.trim()) {
@@ -109,6 +132,77 @@ export default function ShortenForm() {
       toast.error("Could not fetch metadata");
     } finally {
       setIsFetchingMetadata(false);
+    }
+  };
+
+  const handleAiAlias = async () => {
+    if (!originalUrl.trim()) {
+      toast.error("Enter a URL first to generate AI aliases");
+      return;
+    }
+    try { new URL(originalUrl); } catch {
+      toast.error("Please enter a valid URL first");
+      return;
+    }
+    setIsAiAliasLoading(true);
+    setAiAliasSuggestions([]);
+    try {
+      const res = await fetch("/api/ai/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "alias", originalUrl: originalUrl.trim() }),
+      });
+      const data = await res.json();
+      if (res.status === 429) {
+        toast.error(data.error || "AI limit reached. Try again tomorrow.");
+        return;
+      }
+      if (data.suggestions && data.suggestions.length > 0) {
+        setAiAliasSuggestions(data.suggestions);
+        toast.success("AI suggestions ready!");
+      } else {
+        toast.error("Could not generate suggestions");
+      }
+    } catch {
+      toast.error("AI service unavailable");
+    } finally {
+      setIsAiAliasLoading(false);
+    }
+  };
+
+  const handleAiFill = async () => {
+    if (!originalUrl.trim()) {
+      toast.error("Enter a URL first for AI to analyze");
+      return;
+    }
+    try { new URL(originalUrl); } catch {
+      toast.error("Please enter a valid URL first");
+      return;
+    }
+    setIsAiFillLoading(true);
+    try {
+      const res = await fetch("/api/ai/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "meta", originalUrl: originalUrl.trim() }),
+      });
+      const data = await res.json();
+      if (res.status === 429) {
+        toast.error(data.error || "AI limit reached. Try again tomorrow.");
+        return;
+      }
+      if (data.title) {
+        setTitle(data.title);
+        if (!isAdvancedOpen) setIsAdvancedOpen(true);
+      }
+      if (data.description) {
+        setDescription(data.description);
+      }
+      toast.success("AI filled title & description!");
+    } catch {
+      toast.error("AI service unavailable");
+    } finally {
+      setIsAiFillLoading(false);
     }
   };
 
@@ -149,6 +243,26 @@ export default function ShortenForm() {
     setRules(updated);
   };
 
+  const addSplitVariant = () => {
+    if (splitVariants.length >= 5) {
+      toast.error("Maximum 5 A/B variants allowed");
+      return;
+    }
+    setSplitVariants([...splitVariants, { url: "", weight: 50 }]);
+  };
+
+  const removeSplitVariant = (i: number) => {
+    setSplitVariants(splitVariants.filter((_, idx) => idx !== i));
+  };
+
+  const updateSplitVariant = (i: number, field: keyof SplitVariant, val: string | number) => {
+    const updated = [...splitVariants];
+    updated[i] = { ...updated[i], [field]: val };
+    setSplitVariants(updated);
+  };
+
+  const totalSplitWeight = splitVariants.reduce((s, v) => s + (v.weight || 0), 0);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setUrlError("");
@@ -177,6 +291,18 @@ export default function ShortenForm() {
       }
     }
 
+    // Validate split variant URLs
+    for (const variant of splitVariants) {
+      if (variant.url.trim()) {
+        try {
+          new URL(variant.url.trim());
+        } catch {
+          toast.error(`Invalid URL in A/B variant: ${variant.url}`);
+          return;
+        }
+      }
+    }
+
     setIsLoading(true);
     setResult(null);
     setShowQr(false);
@@ -186,6 +312,8 @@ export default function ShortenForm() {
         (r) => r.destinationUrl && r.destinationUrl.trim() !== ""
       );
 
+      const validSplits = splitVariants.filter((v) => v.url.trim() !== "");
+
       const res = await fetch("/api/links", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -194,6 +322,7 @@ export default function ShortenForm() {
           customAlias: customAlias.trim() || undefined,
           expiresIn,
           title: title.trim() || undefined,
+          description: description.trim() || undefined,
           faviconUrl: faviconUrl.trim() || undefined,
           folder: folder.trim() || "General",
           tags,
@@ -203,6 +332,10 @@ export default function ShortenForm() {
           password: password.trim() || undefined,
           maxClicks: maxClicks ? parseInt(maxClicks, 10) : undefined,
           rules: filteredRules,
+          utmSource: utmSource.trim() || undefined,
+          utmMedium: utmMedium.trim() || undefined,
+          utmCampaign: utmCampaign.trim() || undefined,
+          splitDestinations: validSplits.length > 0 ? validSplits : undefined,
         }),
       });
 
@@ -224,6 +357,7 @@ export default function ShortenForm() {
       }
 
       setResult(data);
+      setAiAliasSuggestions([]);
       toast.success("Short link created!");
     } catch {
       toast.error("Network error. Please try again.");
@@ -262,17 +396,33 @@ export default function ShortenForm() {
               <label className="block text-sm font-medium text-slate-700">
                 Destination URL
               </label>
-              {originalUrl && (
-                <button
-                  type="button"
-                  onClick={handleFetchMetadata}
-                  disabled={isFetchingMetadata}
-                  className="text-xs text-indigo-600 hover:text-indigo-700 font-medium inline-flex items-center gap-1 transition-colors"
-                >
-                  <Sparkles className={`w-3.5 h-3.5 ${isFetchingMetadata ? "animate-spin" : ""}`} />
-                  Auto-fill Title
-                </button>
-              )}
+              <div className="flex items-center gap-2">
+                {originalUrl && (
+                  <button
+                    type="button"
+                    onClick={handleAiFill}
+                    disabled={isAiFillLoading}
+                    className="text-xs text-violet-600 hover:text-violet-700 font-medium inline-flex items-center gap-1 transition-colors"
+                    title="AI fill title & description"
+                  >
+                    {isAiFillLoading
+                      ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      : <Sparkles className="w-3.5 h-3.5" />}
+                    AI Fill
+                  </button>
+                )}
+                {originalUrl && (
+                  <button
+                    type="button"
+                    onClick={handleFetchMetadata}
+                    disabled={isFetchingMetadata}
+                    className="text-xs text-indigo-600 hover:text-indigo-700 font-medium inline-flex items-center gap-1 transition-colors"
+                  >
+                    <Sparkles className={`w-3.5 h-3.5 ${isFetchingMetadata ? "animate-spin" : ""}`} />
+                    Auto-fill Title
+                  </button>
+                )}
+              </div>
             </div>
             <Input
               leftIcon={<Link2 className="w-4 h-4" />}
@@ -291,10 +441,24 @@ export default function ShortenForm() {
           {/* Row: Alias + Expiry */}
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium text-slate-700 mb-1.5">
-                Custom Alias{" "}
-                <span className="text-slate-400 font-normal">(optional)</span>
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="block text-sm font-medium text-slate-700">
+                  Custom Alias{" "}
+                  <span className="text-slate-400 font-normal">(optional)</span>
+                </label>
+                <button
+                  type="button"
+                  onClick={handleAiAlias}
+                  disabled={isAiAliasLoading}
+                  className="text-xs text-violet-600 hover:text-violet-700 font-medium inline-flex items-center gap-1 transition-colors"
+                  title="Generate AI alias suggestions"
+                >
+                  {isAiAliasLoading
+                    ? <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    : <Sparkles className="w-3.5 h-3.5" />}
+                  AI Alias
+                </button>
+              </div>
               <Input
                 leftText="/s/"
                 type="text"
@@ -303,6 +467,34 @@ export default function ShortenForm() {
                 onChange={(e) => setCustomAlias(e.target.value)}
                 maxLength={20}
               />
+              {/* AI Alias Suggestions */}
+              <AnimatePresence>
+                {aiAliasSuggestions.length > 0 && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: "auto" }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="overflow-hidden"
+                  >
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      <span className="text-[11px] text-slate-400 self-center">Suggestions:</span>
+                      {aiAliasSuggestions.map((s) => (
+                        <button
+                          key={s}
+                          type="button"
+                          onClick={() => {
+                            setCustomAlias(s);
+                            setAiAliasSuggestions([]);
+                          }}
+                          className="text-[11px] px-2.5 py-1 rounded-lg bg-violet-50 border border-violet-200 text-violet-700 hover:bg-violet-100 font-medium transition-colors"
+                        >
+                          {s}
+                        </button>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
             </div>
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1.5">
@@ -325,8 +517,153 @@ export default function ShortenForm() {
             </div>
           </div>
 
+          {/* UTM + A/B Testing Accordion */}
+          <div className="pt-1">
+            <button
+              type="button"
+              onClick={() => setIsUtmOpen(!isUtmOpen)}
+              className="flex items-center justify-between w-full py-2 text-xs font-semibold uppercase tracking-wider text-slate-500 hover:text-indigo-600 transition-colors"
+            >
+              <span className="flex items-center gap-1.5">
+                <Megaphone className="w-3.5 h-3.5" />
+                UTM Tracking + A/B Testing
+              </span>
+              {isUtmOpen ? (
+                <ChevronUp className="w-4 h-4" />
+              ) : (
+                <ChevronDown className="w-4 h-4" />
+              )}
+            </button>
+
+            <AnimatePresence>
+              {isUtmOpen && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.25 }}
+                  className="overflow-hidden space-y-4 pt-3 border-t border-slate-100"
+                >
+                  {/* UTM Inputs */}
+                  <div>
+                    <p className="text-xs font-semibold text-slate-700 mb-2 uppercase tracking-wide">
+                      UTM Parameters
+                    </p>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-500 mb-1">utm_source</label>
+                        <Input
+                          type="text"
+                          placeholder="e.g. twitter"
+                          value={utmSource}
+                          onChange={(e) => setUtmSource(e.target.value)}
+                          maxLength={50}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-500 mb-1">utm_medium</label>
+                        <Input
+                          type="text"
+                          placeholder="e.g. social"
+                          value={utmMedium}
+                          onChange={(e) => setUtmMedium(e.target.value)}
+                          maxLength={50}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-medium text-slate-500 mb-1">utm_campaign</label>
+                        <Input
+                          type="text"
+                          placeholder="e.g. summer-2026"
+                          value={utmCampaign}
+                          onChange={(e) => setUtmCampaign(e.target.value)}
+                          maxLength={50}
+                        />
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* A/B Split Builder */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <div>
+                        <span className="text-xs font-semibold text-slate-700 uppercase tracking-wide flex items-center gap-1">
+                          <FlaskConical className="w-3.5 h-3.5 text-indigo-500" />
+                          A/B Split Testing
+                        </span>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          Traffic is distributed by weight. Up to 5 variants.
+                        </p>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={addSplitVariant}
+                        disabled={splitVariants.length >= 5}
+                      >
+                        <Plus className="w-3.5 h-3.5 mr-1" />
+                        Add Variant
+                      </Button>
+                    </div>
+
+                    {splitVariants.length > 0 && (
+                      <div className="space-y-2">
+                        {splitVariants.map((variant, idx) => (
+                          <div
+                            key={idx}
+                            className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 p-2.5 bg-slate-50 border border-slate-200 rounded-xl"
+                          >
+                            <input
+                              type="url"
+                              placeholder={`https://variant-${idx + 1}.example.com`}
+                              value={variant.url}
+                              onChange={(e) => updateSplitVariant(idx, "url", e.target.value)}
+                              className="flex-1 rounded-lg border border-slate-200 bg-white px-2.5 py-1.5 text-xs text-slate-800 min-w-0"
+                            />
+                            <div className="flex items-center gap-2 shrink-0">
+                              <input
+                                type="range"
+                                min={1}
+                                max={100}
+                                value={variant.weight}
+                                onChange={(e) =>
+                                  updateSplitVariant(idx, "weight", parseInt(e.target.value, 10))
+                                }
+                                className="w-20 accent-indigo-600"
+                              />
+                              <span className="text-xs font-mono text-indigo-600 w-10 text-right">
+                                {variant.weight}%
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => removeSplitVariant(idx)}
+                                className="p-1.5 text-slate-400 hover:text-red-500 rounded-lg transition-colors"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                        <div className="text-[11px] text-slate-500 text-right">
+                          Total weight:{" "}
+                          <span className={totalSplitWeight === 100 ? "text-emerald-600 font-semibold" : "text-amber-600 font-semibold"}>
+                            {totalSplitWeight}%
+                          </span>
+                          {totalSplitWeight !== 100 && (
+                            <span className="ml-1 text-amber-500">(weights don&apos;t need to sum to 100 — they&apos;re relative)</span>
+                          )}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
+
           {/* Advanced Options Accordion Toggle */}
-          <div className="pt-2">
+          <div className="pt-1">
             <button
               type="button"
               onClick={() => setIsAdvancedOpen(!isAdvancedOpen)}
@@ -355,7 +692,7 @@ export default function ShortenForm() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
                       <label className="block text-xs font-medium text-slate-700 mb-1">
-                        Link Title / Description
+                        Link Title
                       </label>
                       <Input
                         type="text"
@@ -396,6 +733,22 @@ export default function ShortenForm() {
                         ))}
                       </div>
                     </div>
+                  </div>
+
+                  {/* Description */}
+                  <div>
+                    <label className="block text-xs font-medium text-slate-700 mb-1">
+                      Description{" "}
+                      <span className="text-slate-400 font-normal">(max 200 chars)</span>
+                    </label>
+                    <textarea
+                      placeholder="Brief description of this link..."
+                      value={description}
+                      onChange={(e) => setDescription(e.target.value)}
+                      maxLength={200}
+                      rows={2}
+                      className="w-full rounded-xl border border-slate-200 bg-white px-3 py-2.5 text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all resize-none"
+                    />
                   </div>
 
                   {/* Tags */}

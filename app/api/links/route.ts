@@ -13,6 +13,7 @@ export async function GET(req: NextRequest) {
     const tag = searchParams.get('tag')?.trim() || '';
     const isFavorite = searchParams.get('isFavorite');
     const showOnBio = searchParams.get('showOnBio');
+    const campaign = searchParams.get('campaign')?.trim() || '';
 
     // Build Prisma where conditions
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -24,6 +25,7 @@ export async function GET(req: NextRequest) {
         { shortCode: { contains: search, mode: 'insensitive' } },
         { title: { contains: search, mode: 'insensitive' } },
         { tags: { has: search } },
+        { utmCampaign: { contains: search, mode: 'insensitive' } },
       ];
     }
 
@@ -33,6 +35,10 @@ export async function GET(req: NextRequest) {
 
     if (tag) {
       where.tags = { has: tag };
+    }
+
+    if (campaign) {
+      where.utmCampaign = { contains: campaign, mode: 'insensitive' };
     }
 
     if (isFavorite === 'true') {
@@ -82,6 +88,7 @@ export async function POST(req: NextRequest) {
       expiresIn,
       title,
       faviconUrl,
+      description,
       folder,
       tags,
       isFavorite,
@@ -90,6 +97,10 @@ export async function POST(req: NextRequest) {
       password,
       maxClicks,
       rules,
+      utmSource,
+      utmMedium,
+      utmCampaign,
+      splitDestinations,
     } = validation.data;
 
     let shortCode: string;
@@ -124,6 +135,19 @@ export async function POST(req: NextRequest) {
     const expiresAt = calculateExpiresAt(expiresIn);
     const userId = await getAuthUserId();
 
+    // Append UTM params to the originalUrl before saving
+    let finalOriginalUrl = originalUrl;
+    try {
+      const u = new URL(originalUrl);
+      if (utmSource && utmSource.trim()) u.searchParams.set('utm_source', utmSource.trim());
+      if (utmMedium && utmMedium.trim()) u.searchParams.set('utm_medium', utmMedium.trim());
+      if (utmCampaign && utmCampaign.trim()) u.searchParams.set('utm_campaign', utmCampaign.trim());
+      finalOriginalUrl = u.toString();
+    } catch {
+      // Invalid URL – keep original without UTM (should never happen after zod validation)
+      finalOriginalUrl = originalUrl;
+    }
+
     // Default title & favicon if not explicitly provided
     let finalTitle = title?.trim() || null;
     let finalFavicon = faviconUrl?.trim() || null;
@@ -145,14 +169,20 @@ export async function POST(req: NextRequest) {
         ? crypto.createHash('sha256').update(password.trim()).digest('hex')
         : null;
 
+    const splitDest =
+      splitDestinations && splitDestinations.length > 0
+        ? splitDestinations
+        : undefined;
+
     const link = await prisma.link.create({
       data: {
-        originalUrl,
+        originalUrl: finalOriginalUrl,
         shortCode,
         expiresAt,
         userId,
         title: finalTitle,
         faviconUrl: finalFavicon,
+        description: description?.trim() || null,
         folder: folder || 'General',
         tags: tags || [],
         isFavorite: isFavorite || false,
@@ -160,15 +190,20 @@ export async function POST(req: NextRequest) {
         bioTitle: bioTitle?.trim() || null,
         passwordHash,
         maxClicks: maxClicks || null,
-        rules: rules && rules.length > 0
-          ? {
-              create: rules.map((r) => ({
-                type: r.type,
-                value: r.value,
-                destinationUrl: r.destinationUrl,
-              })),
-            }
-          : undefined,
+        utmSource: utmSource?.trim() || null,
+        utmMedium: utmMedium?.trim() || null,
+        utmCampaign: utmCampaign?.trim() || null,
+        splitDestinations: splitDest ?? undefined,
+        rules:
+          rules && rules.length > 0
+            ? {
+                create: rules.map((r) => ({
+                  type: r.type,
+                  value: r.value,
+                  destinationUrl: r.destinationUrl,
+                })),
+              }
+            : undefined,
       },
       include: {
         rules: true,
@@ -185,10 +220,12 @@ export async function POST(req: NextRequest) {
         originalUrl: link.originalUrl,
         title: link.title,
         faviconUrl: link.faviconUrl,
+        description: link.description,
         folder: link.folder,
         tags: link.tags,
         isFavorite: link.isFavorite,
         showOnBio: link.showOnBio,
+        utmCampaign: link.utmCampaign,
         rules: link.rules,
       },
       { status: 201 }

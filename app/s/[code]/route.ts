@@ -1,7 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { redis } from '@/lib/redis';
-import { resolveDestination, parseDevice, logClickAndIncrement, type CachedLinkData } from '@/lib/routing';
+import {
+  resolveDestination,
+  parseDevice,
+  pickSplitDestination,
+  logClickAndIncrement,
+  type CachedLinkData,
+} from '@/lib/routing';
 
 export async function GET(
   request: NextRequest,
@@ -18,22 +24,22 @@ export async function GET(
     const cacheKey = `short:${code}`;
     let cachedData: CachedLinkData | null = null;
 
-    // 1. Check Redis Cache (JSON format)
+    // 1. Check Redis Cache (JSON format) with backward-compat handling
     try {
       const cachedStr = await redis.get(cacheKey);
       if (cachedStr) {
         if (cachedStr.startsWith('{')) {
-          cachedData = JSON.parse(cachedStr) as CachedLinkData;
+          try {
+            cachedData = JSON.parse(cachedStr) as CachedLinkData;
+          } catch {
+            // Corrupt JSON — delete and force DB miss
+            await redis.del(cacheKey);
+            cachedData = null;
+          }
         } else {
-          // Backward compatibility for legacy string caches
-          cachedData = {
-            id: '',
-            originalUrl: cachedStr,
-            isActive: true,
-            expiresAt: null,
-            passwordHash: null,
-            rules: [],
-          };
+          // Legacy string cache — delete and force DB miss so we write the new JSON format
+          await redis.del(cacheKey);
+          cachedData = null;
         }
       }
     } catch (redisErr) {
@@ -89,6 +95,19 @@ export async function GET(
         return NextResponse.redirect(new URL(`/verify/${code}`, request.url), 302);
       }
 
+      // Parse splitDestinations from Json field safely
+      let splitDestinations: CachedLinkData['splitDestinations'] = undefined;
+      try {
+        if (link.splitDestinations) {
+          const raw = link.splitDestinations as unknown;
+          if (Array.isArray(raw)) {
+            splitDestinations = raw as CachedLinkData['splitDestinations'];
+          }
+        }
+      } catch {
+        splitDestinations = undefined;
+      }
+
       cachedData = {
         id: link.id,
         originalUrl: link.originalUrl,
@@ -102,22 +121,14 @@ export async function GET(
         })),
         maxClicks: link.maxClicks,
         clickCount: link.clickCount,
+        splitDestinations,
       };
 
       // Cache in Redis with 3600s expiration
       try {
         await redis.set(
           cacheKey,
-          JSON.stringify({
-            id: link.id,
-            originalUrl: link.originalUrl,
-            isActive: link.isActive,
-            expiresAt: link.expiresAt ? link.expiresAt.toISOString() : null,
-            passwordHash: link.passwordHash,
-            rules: cachedData.rules,
-            maxClicks: link.maxClicks,
-            clickCount: link.clickCount,
-          }),
+          JSON.stringify(cachedData),
           'EX',
           3600
         );
@@ -136,19 +147,28 @@ export async function GET(
     const country = rawCountry.toUpperCase();
     const referrer = request.headers.get('referer') || request.headers.get('referrer') || 'Direct';
 
-    const finalDestination = resolveDestination(
+    // Priority: smart country/device rule > A/B split > originalUrl
+    let finalDestination = resolveDestination(
       cachedData.originalUrl,
       cachedData.rules,
       country,
       device
     );
 
-    // 4. Log Click & sync Redis count
+    // 4. A/B Split — only applies if smart rules did NOT pick a custom destination
+    if (finalDestination === cachedData.originalUrl && cachedData.splitDestinations && cachedData.splitDestinations.length > 0) {
+      const picked = pickSplitDestination(cachedData.splitDestinations);
+      if (picked) {
+        finalDestination = picked;
+      }
+    }
+
+    // 5. Log Click & sync Redis count
     if (cachedData.id) {
       await logClickAndIncrement(cachedData.id, code, userAgent, country, referrer);
     }
 
-    // 5. Return 302 Redirect
+    // 6. Return 302 Redirect
     return NextResponse.redirect(finalDestination, 302);
   } catch (error) {
     console.error('Error redirecting short link:', error);

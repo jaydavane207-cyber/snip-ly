@@ -50,6 +50,7 @@ interface LinkItem {
   expiresAt: string | null;
   createdAt: string;
   clickCount: number;
+  utmCampaign?: string | null;
   rules?: LinkRule[];
   _count: { clicks: number };
 }
@@ -95,6 +96,7 @@ export default function DashboardPage() {
   const [search, setSearch] = useState("");
   const [selectedFolder, setSelectedFolder] = useState<string>("all");
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
+  const [selectedCampaign, setSelectedCampaign] = useState<string | null>(null);
   const [onlyFavorites, setOnlyFavorites] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [deletingCode, setDeletingCode] = useState<string | null>(null);
@@ -244,18 +246,22 @@ export default function DashboardPage() {
         l.originalUrl.toLowerCase().includes(search.toLowerCase()) ||
         l.shortCode.toLowerCase().includes(search.toLowerCase()) ||
         (l.title && l.title.toLowerCase().includes(search.toLowerCase())) ||
-        l.tags?.some((t) => t.toLowerCase().includes(search.toLowerCase()));
+        l.tags?.some((t) => t.toLowerCase().includes(search.toLowerCase())) ||
+        (l.utmCampaign && l.utmCampaign.toLowerCase().includes(search.toLowerCase()));
 
       const matchesFolder =
         selectedFolder === "all" || (l.folder || "General") === selectedFolder;
 
       const matchesTag = !selectedTag || l.tags?.includes(selectedTag);
 
+      const matchesCampaign =
+        !selectedCampaign || l.utmCampaign === selectedCampaign;
+
       const matchesFavorite = !onlyFavorites || l.isFavorite;
 
-      return matchesSearch && matchesFolder && matchesTag && matchesFavorite;
+      return matchesSearch && matchesFolder && matchesTag && matchesCampaign && matchesFavorite;
     });
-  }, [links, search, selectedFolder, selectedTag, onlyFavorites]);
+  }, [links, search, selectedFolder, selectedTag, selectedCampaign, onlyFavorites]);
 
   const totalClicks = links.reduce(
     (sum, l) => sum + (l._count?.clicks || l.clickCount || 0),
@@ -376,6 +382,21 @@ export default function DashboardPage() {
                 <button
                   onClick={() => setSelectedTag(null)}
                   className="text-indigo-400 hover:text-indigo-700"
+                >
+                  &times;
+                </button>
+              </span>
+            </div>
+          )}
+          {/* Active Campaign Filter indicator */}
+          {selectedCampaign && (
+            <div className="flex items-center gap-1.5 text-xs text-slate-500">
+              <span>Campaign:</span>
+              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-100 font-medium">
+                📣 {selectedCampaign}
+                <button
+                  onClick={() => setSelectedCampaign(null)}
+                  className="text-violet-400 hover:text-violet-700"
                 >
                   &times;
                 </button>
@@ -508,7 +529,7 @@ export default function DashboardPage() {
                                 </div>
 
                                 <div className="space-y-1 min-w-0">
-                                  {/* Title */}
+                                   {/* Title */}
                                   <div className="flex items-center gap-1.5 flex-wrap">
                                     <span
                                       className="font-medium text-slate-900 text-xs truncate max-w-[200px]"
@@ -531,6 +552,26 @@ export default function DashboardPage() {
                                       >
                                         {link.rules.length} Rules
                                       </span>
+                                    )}
+                                    {link.utmCampaign && (
+                                      <button
+                                        type="button"
+                                        onClick={() =>
+                                          setSelectedCampaign(
+                                            selectedCampaign === link.utmCampaign
+                                              ? null
+                                              : link.utmCampaign!
+                                          )
+                                        }
+                                        className={`inline-flex items-center text-[10px] font-semibold rounded px-1.5 py-0.5 border transition-colors ${
+                                          selectedCampaign === link.utmCampaign
+                                            ? "text-violet-700 bg-violet-100 border-violet-200"
+                                            : "text-violet-600 bg-violet-50 border-violet-100 hover:bg-violet-100"
+                                        }`}
+                                        title={`Filter by campaign: ${link.utmCampaign}`}
+                                      >
+                                        📣 {link.utmCampaign}
+                                      </button>
                                     )}
                                   </div>
 

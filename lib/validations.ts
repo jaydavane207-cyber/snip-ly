@@ -6,6 +6,11 @@ export const linkRuleSchema = z.object({
   destinationUrl: z.string().url('Invalid destination URL'),
 });
 
+export const splitDestinationSchema = z.object({
+  url: z.string().url('Invalid split destination URL'),
+  weight: z.number().int().min(1).max(100),
+});
+
 export const createLinkSchema = z.object({
   originalUrl: z.string().url('Invalid URL format'),
   customAlias: z
@@ -19,6 +24,7 @@ export const createLinkSchema = z.object({
   expiresIn: z.enum(['1h', '24h', '7d', 'never']).default('never').optional(),
   title: z.string().max(100).optional().or(z.literal('')),
   faviconUrl: z.string().max(2000).optional().or(z.literal('')),
+  description: z.string().max(200).optional().or(z.literal('')),
   folder: z.string().max(30).optional().default('General'),
   tags: z.array(z.string().max(30)).max(10).optional().default([]),
   isFavorite: z.boolean().optional().default(false),
@@ -27,6 +33,10 @@ export const createLinkSchema = z.object({
   password: z.string().min(1).max(100).optional().or(z.literal('')),
   maxClicks: z.number().int().positive().optional().nullable(),
   rules: z.array(linkRuleSchema).max(10).optional().default([]),
+  utmSource: z.string().max(50).optional().or(z.literal('')),
+  utmMedium: z.string().max(50).optional().or(z.literal('')),
+  utmCampaign: z.string().max(50).optional().or(z.literal('')),
+  splitDestinations: z.array(splitDestinationSchema).max(5).optional(),
 });
 
 export function calculateExpiresAt(expiresIn?: '1h' | '24h' | '7d' | 'never'): Date | null {
@@ -66,6 +76,8 @@ export const updateLinkSchema = z.object({
     )
     .max(10)
     .optional(),
+  description: z.string().max(200).optional().nullable(),
+  splitDestinations: z.array(splitDestinationSchema).max(5).optional().nullable(),
 });
 
 export const profileSchema = z.object({

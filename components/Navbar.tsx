@@ -9,6 +9,7 @@ const navLinks = [
   { href: "/", label: "Home" },
   { href: "/dashboard", label: "Dashboard" },
   { href: "/dashboard/bio", label: "Bio Link" },
+  { href: "/dashboard/webhooks", label: "Webhooks" },
   { href: "/#features", label: "Features" },
 ];
 

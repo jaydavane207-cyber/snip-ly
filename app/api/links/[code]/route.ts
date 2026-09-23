@@ -48,6 +48,13 @@ export async function PATCH(
     if (data.bioTitle !== undefined) updateData.bioTitle = data.bioTitle;
     if (data.isActive !== undefined) updateData.isActive = data.isActive;
     if (data.maxClicks !== undefined) updateData.maxClicks = data.maxClicks;
+    if (data.description !== undefined) updateData.description = data.description;
+    if (data.splitDestinations !== undefined) {
+      updateData.splitDestinations =
+        data.splitDestinations && data.splitDestinations.length > 0
+          ? data.splitDestinations
+          : null;
+    }
 
     if (data.password !== undefined) {
       if (data.password === null || data.password.trim() === '') {
@@ -80,7 +87,7 @@ export async function PATCH(
       include: { rules: true },
     });
 
-    // Invalidate Redis cache
+    // Always invalidate Redis cache after any update
     try {
       await redis.del(`short:${code}`);
     } catch (redisErr) {

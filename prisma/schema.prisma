@@ -8,27 +8,44 @@ datasource db {
 }
 
 model Link {
-  id           String     @id @default(cuid())
-  originalUrl  String
-  shortCode    String     @unique
-  userId       String?
-  title        String?
-  faviconUrl   String?
-  folder       String?    @default("General")
-  tags         String[]   @default([])
-  isFavorite   Boolean    @default(false)
-  showOnBio    Boolean    @default(false)
-  bioTitle     String?
-  passwordHash String?
-  maxClicks    Int?
-  clickCount   Int        @default(0)
-  isActive     Boolean    @default(true)
-  expiresAt    DateTime?
-  createdAt    DateTime   @default(now())
-  clicks       Click[]
-  rules        LinkRule[]
+  id                 String     @id @default(cuid())
+  originalUrl        String
+  shortCode          String     @unique
+  userId             String?
+  title              String?
+  faviconUrl         String?
+  description        String?
+  folder             String?    @default("General")
+  tags               String[]   @default([])
+  isFavorite         Boolean    @default(false)
+  showOnBio          Boolean    @default(false)
+  bioTitle           String?
+  passwordHash       String?
+  maxClicks          Int?
+  clickCount         Int        @default(0)
+  isActive           Boolean    @default(true)
+  expiresAt          DateTime?
+  utmSource          String?
+  utmMedium          String?
+  utmCampaign        String?
+  splitDestinations  Json?
+  createdAt          DateTime   @default(now())
+  clicks             Click[]
+  rules              LinkRule[]
 
   @@index([shortCode])
+  @@index([userId])
+}
+
+model Webhook {
+  id        String   @id @default(cuid())
+  userId    String
+  url       String
+  event     String   @default("milestone")
+  secret    String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+
   @@index([userId])
 }
 
