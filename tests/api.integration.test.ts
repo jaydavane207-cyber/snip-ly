@@ -85,7 +85,7 @@ describe('API Integration Tests (http://localhost:3000)', () => {
 
     // Log worker / queue status
     console.log('[Worker Status]: Click queue using direct DB fallback');
-  }, 35000);
+  });
 
   afterAll(async () => {
     // Cleanup test links from DB

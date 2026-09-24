@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
 import { prisma } from '@/lib/db';
 import { redis } from '@/lib/redis';
+import { getAuthUserId } from '@/lib/auth';
 import { updateLinkSchema } from '@/lib/validations';
 
 export async function PATCH(
@@ -23,6 +24,11 @@ export async function PATCH(
 
     if (!existing) {
       return NextResponse.json({ error: 'Link not found' }, { status: 404 });
+    }
+
+    const authUserId = await getAuthUserId();
+    if (existing.userId && existing.userId !== 'anonymous' && authUserId !== existing.userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
     }
 
     const body = await req.json();
@@ -60,10 +66,7 @@ export async function PATCH(
       if (data.password === null || data.password.trim() === '') {
         updateData.passwordHash = null;
       } else {
-        updateData.passwordHash = crypto
-          .createHash('sha256')
-          .update(data.password.trim())
-          .digest('hex');
+        updateData.passwordHash = await bcrypt.hash(data.password.trim(), 10);
       }
     }
 
@@ -116,6 +119,11 @@ export async function DELETE(
     const existing = await prisma.link.findUnique({ where: { shortCode: code } });
     if (!existing) {
       return NextResponse.json({ error: 'Link not found' }, { status: 404 });
+    }
+
+    const authUserId = await getAuthUserId();
+    if (existing.userId && existing.userId !== 'anonymous' && authUserId !== existing.userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 403 });
     }
 
     await prisma.link.delete({ where: { shortCode: code } });

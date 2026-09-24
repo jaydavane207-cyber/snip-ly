@@ -1,7 +1,7 @@
 import * as React from "react";
 import { cn } from "@/lib/utils";
 
-type BadgeVariant = "default" | "success" | "warning" | "danger" | "info";
+type BadgeVariant = "default" | "secondary" | "success" | "warning" | "danger" | "info";
 
 interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
   variant?: BadgeVariant;
@@ -9,11 +9,13 @@ interface BadgeProps extends React.HTMLAttributes<HTMLSpanElement> {
 
 const variantClasses: Record<BadgeVariant, string> = {
   default: "bg-slate-100 text-slate-700",
+  secondary: "bg-slate-100 text-slate-600",
   success: "bg-emerald-50 text-emerald-700 border border-emerald-200",
   warning: "bg-amber-50 text-amber-700 border border-amber-200",
   danger: "bg-red-50 text-red-700 border border-red-200",
   info: "bg-indigo-50 text-indigo-700 border border-indigo-200",
 };
+
 
 export function Badge({
   variant = "default",

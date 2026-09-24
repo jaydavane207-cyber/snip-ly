@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { nanoid } from 'nanoid';
-import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
 import { prisma } from '@/lib/db';
 import { redis } from '@/lib/redis';
 import { getAuthUserId } from '@/lib/auth';
@@ -12,13 +12,19 @@ export async function GET(req: NextRequest) {
     const search = searchParams.get('search')?.trim() || '';
     const folder = searchParams.get('folder')?.trim() || '';
     const tag = searchParams.get('tag')?.trim() || '';
-    const isFavorite = searchParams.get('isFavorite');
+    const isFavorite = searchParams.get('favorite') ?? searchParams.get('isFavorite');
     const showOnBio = searchParams.get('showOnBio');
     const campaign = searchParams.get('campaign')?.trim() || '';
+    const mine = searchParams.get('mine');
 
     // Build Prisma where conditions
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const where: any = {};
+
+    if (mine === 'true') {
+      const userId = await getAuthUserId();
+      where.userId = userId;
+    }
 
     if (search) {
       where.OR = [
@@ -57,7 +63,7 @@ export async function GET(req: NextRequest) {
     const links = await prisma.link.findMany({
       where,
       orderBy: { createdAt: 'desc' },
-      take: 100,
+      take: 50,
       include: {
         rules: true,
         _count: { select: { clicks: true } },
@@ -195,7 +201,7 @@ export async function POST(req: NextRequest) {
 
     const passwordHash =
       password && password.trim() !== ''
-        ? crypto.createHash('sha256').update(password.trim()).digest('hex')
+        ? await bcrypt.hash(password.trim(), 10)
         : null;
 
     const splitDest =

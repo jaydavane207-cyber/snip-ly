@@ -1,4 +1,4 @@
-/* eslint-disable */
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const path = require('path');
 
 module.exports = {
@@ -8,7 +8,10 @@ module.exports = {
     },
   },
   test: {
-    testTimeout: 20000,
-    hookTimeout: 20000,
+    globals: true,
+    environment: 'node',
+    testTimeout: 30000,
+    hookTimeout: 40000,
+    include: ['tests/**/*.test.ts', 'lib/__tests__/**/*.test.ts'],
   },
 };

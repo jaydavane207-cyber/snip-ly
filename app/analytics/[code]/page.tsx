@@ -348,8 +348,20 @@ export default function AnalyticsPage() {
               >
                 <ExternalLink className="w-4 h-4" />
               </a>
+              {code && (
+                <a
+                  href={`/api/links/${code}/export`}
+                  download={`clicks-${code}.csv`}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 transition-colors"
+                  title="Export CSV"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  Export CSV
+                </a>
+              )}
             </div>
           )}
+
         </div>
 
         {/* Error state */}

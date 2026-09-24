@@ -1,169 +1,196 @@
-# Scalable URL Shortener
+# Snip.ly - Production URL Shortener & Link Management Platform
 
-A high-performance, scalable URL Shortener backend built with **Next.js 14 App Router**, **PostgreSQL**, **Redis**, and **Prisma ORM**.
+A high-performance, enterprise-grade URL shortener and bio-link management platform built with Next.js 14 App Router, PostgreSQL 16, Redis 7, Prisma ORM, BullMQ, and Tailwind CSS.
 
-## Features
+---
 
-- ⚡ **High-Performance Caching**: Redis (ioredis) caching with 1-hour TTL on redirects for low-latency lookups.
-- 🗄️ **Persistent Relational DB**: PostgreSQL 16 managed via Prisma ORM for structured link and click tracking.
-- 🔗 **Custom Aliases & NanoID Generation**: Supports custom short codes (validated via Zod) or auto-generated 7-character NanoIDs.
-- ⏳ **Link Expiration**: Configurable expiration periods (`1h`, `24h`, `7d`, `never`).
-- 🛡️ **Type-Safe Validation**: Full request schema validation powered by Zod.
-- 🐳 **Containerized Setup**: Ready-to-use Docker Compose for PostgreSQL 16 and Redis 7.
+## Architecture Overview
+
+```
+                                      +------------------------+
+                                      |     Client Browser     |
+                                      +-----------+------------+
+                                                  |
+                    +-----------------------------+-----------------------------+
+                    |                                                           |
+          [ Redirect: /s/:code ]                                       [ API / Dashboard ]
+                    |                                                           |
+        +-----------v-----------+                                   +-----------v-----------+
+        |   Redis Cache Lookup  |                                   |  Next.js 14 App Router|
+        +-----+-----------+-----+                                   |  Zod Schema Validation|
+              |           |                                         +-----------+-----------+
+         (Cache Hit) (Cache Miss)                                               |
+              |           |                                         +-----------v-----------+
+              |     +-----v-----+                                   |   PostgreSQL 16 DB    |
+              |     | PostgreSQL|                                   |     (Prisma ORM)      |
+              |     +-----+-----+                                   +-----------------------+
+              |           |
+        +-----v-----------v-----+
+        |  Rule Resolution:     |
+        |  1. Country (GeoIP)   |
+        |  2. Device (Mobile/PC)|
+        |  3. A/B Split (Weight)|
+        |  4. Original URL      |
+        +-----------+-----------+
+                    |
+        +-----------v-----------+
+        |  302 Found Redirect   |
+        +-----------+-----------+
+                    | (async non-blocking)
+        +-----------v-----------+
+        |  BullMQ Click Queue   |-----> [ Background Worker: clickWorker.ts ]
+        |  (Redis 7 Stream)     |-----> [ DB Persistence + Webhook Milestones ]
+        +-----------------------+
+```
+
+---
+
+## Core Capabilities
+
+- **Ultra-Fast Redirects with Redis Caching**: Sub-millisecond redirects served directly from Redis with 1-hour sliding TTL.
+- **Smart Dynamic Routing**: Geolocation routing (GeoIP) and device-specific routing (mobile vs. desktop).
+- **A/B Split Testing**: Weighted multi-destination traffic distribution across up to 5 target URLs.
+- **Asynchronous Click Ingestion (BullMQ)**: High-throughput click event queueing powered by Redis and processed by background worker processes.
+- **Live Real-Time Analytics & CSV Export**: Real-time click counters, 60-minute live velocity, active user estimations, country/browser breakdowns, and one-click CSV export.
+- **Developer REST API**: Programmatic link creation via `/api/v1/shorten` authenticated by revocable SHA-256 API keys (`x-api-key: snip_...`).
+- **Bio Link Hubs**: Customizable public bio profiles (`/b/:username`) displaying selected verified links and social profiles.
+- **Webhook Milestones**: Automatic webhook dispatch on click milestones (10, 50, 100, 500, 1000, 5000) with timeout safety.
+- **AI-Powered Alias & Metadata Generation**: Automated custom alias and metadata generation using Google Gemini 2.0 Flash with deterministic fallback.
+- **Password Protection & Expiry**: Bcrypt-hashed password protection unlock screens and time-based link expiration (`1h`, `24h`, `7d`, `never`).
+- **Security & SSRF Hardening**: Private IP and localhost filtering, input sanitation, and rate limiting (10 requests/minute per IP).
 
 ---
 
 ## Tech Stack
 
-- **Framework**: [Next.js 14](https://nextjs.org/) (App Router, TypeScript)
-- **Database**: [PostgreSQL 16](https://www.postgresql.org/)
-- **Caching**: [Redis 7](https://redis.io/) via [ioredis](https://github.com/redis/ioredis)
-- **ORM**: [Prisma](https://www.prisma.io/)
-- **Validation**: [Zod](https://zod.dev/)
-- **ID Generator**: [nanoid](https://github.com/ai/nanoid)
-
----
-
-## Architecture & Flow
-
-```
-[Client] ---> POST /api/links ---> Zod Validation ---> Check / Generate Code ---> Prisma (PostgreSQL) ---> Return Short URL
-[Client] ---> GET /s/:code   ---> Check Redis Cache
-                                      |
-                                      +--> Cache HIT  ---> 302 Redirect to originalUrl
-                                      +--> Cache MISS ---> Prisma DB Lookup ---> (Not found / Expired -> 404)
-                                                                 |
-                                                                 +--> Set Redis Cache (TTL 3600s) ---> 302 Redirect
-```
+| Layer | Technology |
+|---|---|
+| Framework | Next.js 14.2 (App Router, Server Components, Route Handlers) |
+| Language | TypeScript 5 |
+| Database | PostgreSQL 16 (via Prisma ORM 6) |
+| Caching & Queue | Redis 7 (via ioredis and BullMQ) |
+| Worker Process | tsx running BullMQ Worker |
+| Styling | Tailwind CSS, Lucide Icons, Framer Motion |
+| Charts & UI | Recharts, Sonner (Toasts), QRCode.react |
+| Testing | Vitest 5 |
 
 ---
 
 ## Getting Started
 
 ### 1. Prerequisites
-- [Node.js 18+](https://nodejs.org/)
-- [Docker](https://www.docker.com/) & Docker Compose
+- Node.js 18+ (Node 20+ recommended)
+- Docker & Docker Compose (or local PostgreSQL & Redis)
 
-### 2. Clone and Install Dependencies
-```bash
-git clone https://github.com/jaydavane207-cyber/url-shortener.git
-cd url-shortener
-npm install
-```
-
-### 3. Configure Environment Variables
-Copy `.env.example` to `.env`:
-```bash
-cp .env.example .env
-```
-Ensure `.env` matches your configuration:
-```env
-DATABASE_URL="postgresql://postgres:postgres@localhost:5432/urldb?schema=public"
-REDIS_URL="redis://localhost:6379"
-NEXT_PUBLIC_BASE_URL="http://localhost:3000"
-```
-
-### 4. Start Infrastructure (Postgres & Redis)
+### 2. Infrastructure Setup
+Start the PostgreSQL 16 and Redis 7 containers:
 ```bash
 docker compose up -d
 ```
 
-### 5. Run Database Migrations
+Verify containers are running:
 ```bash
-npx prisma migrate dev --name init
+docker ps
 ```
 
-### 6. Start the Development Server
+### 3. Environment Configuration
+Verify your `.env` file contains valid database and cache connection strings:
+```env
+DATABASE_URL="postgresql://postgres:postgres@localhost:5432/urldb?schema=public"
+REDIS_URL="redis://localhost:6379"
+NEXT_PUBLIC_BASE_URL="http://localhost:3000"
+GEMINI_API_KEY=""
+```
+
+### 4. Database Schema Sync
+Generate the Prisma client and sync schema to PostgreSQL:
+```bash
+npx prisma db push
+```
+
+### 5. Running the Application
+Run the Next.js development server:
 ```bash
 npm run dev
 ```
+
+In a separate terminal, launch the background click processing worker:
+```bash
+npm run worker
+```
+
 Open [http://localhost:3000](http://localhost:3000) in your browser.
 
 ---
 
-## API Documentation
+## Production Build & Scripts
 
-### 1. Create Short Link
-**`POST /api/links`**
+- `npm run build`: Generates Prisma client and compiles production Next.js application with zero warnings/errors.
+- `npm run start`: Starts the optimized production Next.js HTTP server.
+- `npm run worker`: Starts the BullMQ background worker for queue processing.
+- `npm run lint`: Runs ESLint across all source directories (`app/`, `lib/`, `components/`, `workers/`).
+- `npm test`: Executes all Vitest unit and integration test suites.
 
-**Request Body:**
+---
+
+## REST API Documentation
+
+### Create Short Link (REST v1)
+`POST /api/v1/shorten`
+
+Headers:
+- `Content-Type: application/json`
+- `x-api-key: snip_your_api_key_here`
+
+Request Body:
 ```json
 {
-  "originalUrl": "https://example.com/very/long/url",
-  "customAlias": "my-alias",   // Optional: 3-20 alphanumeric, hyphen, underscore characters
-  "expiresIn": "24h"          // Optional: "1h" | "24h" | "7d" | "never" (default: "never")
+  "originalUrl": "https://example.com/target-landing-page",
+  "customAlias": "custom-promo",
+  "expiresIn": "7d",
+  "title": "Promo Campaign",
+  "folder": "Marketing",
+  "tags": ["promo", "summer"]
 }
 ```
 
-**Success Response (`201 Created`):**
+Response (`200 OK`):
 ```json
 {
-  "shortCode": "my-alias",
-  "shortUrl": "http://localhost:3000/s/my-alias"
+  "id": "cuid_here",
+  "shortCode": "custom-promo",
+  "shortUrl": "http://localhost:3000/s/custom-promo",
+  "originalUrl": "https://example.com/target-landing-page",
+  "title": "Promo Campaign"
 }
 ```
 
-**Error Responses:**
-- `400 Bad Request`: Validation failure (e.g. invalid URL, invalid alias format).
-- `409 Conflict`: Custom alias is already in use.
-- `500 Internal Server Error`: Unexpected server error.
+### Export Click Analytics (CSV)
+`GET /api/links/:code/export`
+
+Returns a CSV file attachment containing:
+- `timestamp`: ISO-8601 click timestamp
+- `country`: Two-letter ISO country code or UNKNOWN
+- `device`: `desktop` or `mobile`
+- `browser`: Detected browser family
+- `os`: Operating system family
+- `referrer`: HTTP referrer URL or Direct
 
 ---
 
-### 2. Redirect to Original URL
-**`GET /s/:code`**
+## Testing & Quality Assurance
 
-- Checks Redis cache for `short:<code` (Cache HIT -> 302 Redirect).
-- If not cached, looks up in PostgreSQL and populates Redis cache with 3600s TTL.
-- Returns `302 Found` with `Location` header targeting the original URL.
-- Returns `404 Not Found` if the code does not exist or has expired.
+Run the test suite:
+```bash
+npx vitest run
+```
 
----
-
-## Autonomous Agent Guardrails & Sandboxing
-
-This repository is configured with a strict 3-tier security model for autonomous AI coding agents:
-
-### 1. Ephemeral Containerization
-- **Sandbox Image**: `docker/Dockerfile.agent` (unprivileged `agent` user on Node 20 Alpine).
-- **Directory Restrictions**: Application source (`app/`, `lib/`, `prisma/`, `public/`) is mounted read-write (`:rw`), while root configs (`package.json`, `tsconfig.json`, `next.config.mjs`, `.env`) are mounted **read-only** (`:ro`).
-- **Commands**:
-  ```bash
-  # Linux/WSL/macOS
-  ./scripts/agent-container-run.sh run       # Launch ephemeral container (--rm)
-  ./scripts/agent-container-run.sh respawn   # Terminate dirty container & respawn fresh
-
-  # Windows PowerShell
-  .\scripts\agent-container-run.ps1 run
-  .\scripts\agent-container-run.ps1 respawn
-  ```
-
-### 2. Command Allowlisting
-- **Safe Executor**: All commands executed by an agent must be routed through `node scripts/safe-executor.js <cmd>`.
-- **Allowlisted**: `npm run build`, `npm run lint`, `npm test`, `git status`, `git diff`, `git add`, `git commit`, `npx prisma validate`.
-- **Blocked**: Destructive actions (`rm -rf`), permission modifications (`chmod`), arbitrary outbound network calls (`curl`, `wget`), and direct pushes to `main`.
-
-### 3. Git-Driven State Reversion
-- Agents operate like junior developers:
-  ```bash
-  # 1. Start on an isolated task branch (prevent edits on main)
-  node scripts/agent-task.js start <feature-name>
-
-  # 2. Run automated validation (lint & build)
-  node scripts/agent-task.js verify
-
-  # 3. Commit to agent task branch
-  node scripts/agent-task.js commit "feat: implement feature"
-
-  # 4. Generate Pull Request summary (human review required)
-  node scripts/agent-task.js pr
-
-  # 5. Fast state reversion (wipes broken agent branch and restores clean main in seconds)
-  node scripts/agent-task.js discard
-  ```
-
----
-
-## License
-
-MIT
+All 88 test cases across 8 test suites pass:
+1. `tests/routing.unit.test.ts` (20 tests): Destination resolution, smart routing rules, weighted A/B split calculations.
+2. `tests/api.integration.test.ts` (18 tests): Full HTTP API lifecycle, redirects, rate limiting, UTM parameters, password verification, max clicks enforcement.
+3. `tests/frontend.smoke.test.ts` (4 tests): Route smoke tests for dashboard, bio links, and analytics.
+4. `lib/__tests__/verify.test.ts` (5 tests): Password hashing and comparison logic.
+5. `lib/__tests__/routing.test.ts` (13 tests): Smart rule matchers and device parsing.
+6. `lib/__tests__/metadata.test.ts` (6 tests): SSRF protection and metadata extraction.
+7. `lib/__tests__/schemas.test.ts` (11 tests): Zod validation schemas.
+8. `lib/__tests__/v3_features.test.ts` (11 tests): Webhooks, live stats, and bio hubs.

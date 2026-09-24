@@ -38,7 +38,7 @@ export const createLinkSchema = z.object({
   isFavorite: z.boolean().optional().default(false),
   showOnBio: z.boolean().optional().default(false),
   bioTitle: z.string().max(100).optional().or(z.literal('')),
-  password: z.string().min(1).max(100).optional().or(z.literal('')),
+  password: z.string().min(4, 'Password must be at least 4 characters').max(100).optional().or(z.literal('')),
   maxClicks: z.number().int().positive().optional().nullable(),
   rules: z.array(linkRuleSchema).max(10).optional().default([]),
   utmSource: z.string().max(50).optional().or(z.literal('')),
@@ -72,7 +72,7 @@ export const updateLinkSchema = z.object({
   showOnBio: z.boolean().optional(),
   bioTitle: z.string().max(100).optional().nullable(),
   isActive: z.boolean().optional(),
-  password: z.string().max(100).optional().nullable(),
+  password: z.string().min(4, 'Password must be at least 4 characters').max(100).optional().nullable().or(z.literal('')),
   maxClicks: z.number().int().positive().optional().nullable(),
   rules: z
     .array(
@@ -100,11 +100,13 @@ export const profileSchema = z.object({
   displayName: z.string().max(60).optional().nullable(),
   bio: z.string().max(300).optional().nullable(),
   avatarUrl: z.string().url().optional().or(z.literal('')).nullable(),
+  theme: z.enum(['indigo', 'emerald', 'rose']).optional().nullable(),
   socialLinks: z
     .record(z.string(), z.string().url().or(z.literal('')).optional().nullable())
     .optional()
     .nullable(),
 });
+
 
 export function isPrivateOrLocalhost(hostname: string): boolean {
   const lower = hostname.toLowerCase();

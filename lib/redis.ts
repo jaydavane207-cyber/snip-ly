@@ -7,10 +7,12 @@ const globalForRedis = globalThis as unknown as {
 const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
 
 function createRedisInstance(): Redis {
+  const isTls = redisUrl.startsWith('rediss://');
   const client = new Redis(redisUrl, {
     maxRetriesPerRequest: null,
     enableReadyCheck: false,
     lazyConnect: true,
+    tls: isTls ? { rejectUnauthorized: false } : undefined,
     retryStrategy(times) {
       const delay = Math.min(times * 50, 2000);
       return delay;

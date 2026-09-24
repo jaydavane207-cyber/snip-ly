@@ -10,6 +10,24 @@ import {
   type CachedLinkData,
 } from '@/lib/routing';
 
+export const dynamic = 'force-dynamic';
+
+async function lookupCountry(ip: string): Promise<string | null> {
+  if (!ip) return null;
+  try {
+    const pkg = 'geoip-lite';
+    const geoip = await import(/* webpackIgnore: true */ pkg);
+    const lookupFn = geoip?.default?.lookup || geoip?.lookup;
+    if (typeof lookupFn === 'function') {
+      const geo = lookupFn(ip);
+      return geo?.country || null;
+    }
+  } catch {
+    // GeoIP lookup fallback
+  }
+  return null;
+}
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ code: string }> | { code: string } }
@@ -137,11 +155,18 @@ export async function GET(
     // 3. Smart Matching (both HIT and MISS)
     const userAgent = request.headers.get('user-agent') || '';
     const device = parseDevice(userAgent);
-    const rawCountry =
+    const forwardedFor = request.headers.get('x-forwarded-for');
+    const ip = forwardedFor ? forwardedFor.split(',')[0].trim() : (request.headers.get('x-real-ip') || '');
+
+    let rawCountry =
       request.headers.get('x-vercel-ip-country') ||
-      request.headers.get('cf-ipcountry') ||
-      'UNKNOWN';
-    const country = rawCountry.toUpperCase();
+      request.headers.get('cf-ipcountry');
+
+    if (!rawCountry && ip) {
+      rawCountry = await lookupCountry(ip);
+    }
+
+    const country = (rawCountry || 'UNKNOWN').toUpperCase();
     const referrer = request.headers.get('referer') || request.headers.get('referrer') || 'Direct';
 
     // Priority: smart country/device rule > A/B split > originalUrl
@@ -162,7 +187,11 @@ export async function GET(
 
     // 5. Log Click & sync Redis count
     if (cachedData.id) {
-      await logClickAndIncrement(cachedData.id, code, userAgent, country, referrer);
+      if (cachedData.maxClicks) {
+        await logClickAndIncrement(cachedData.id, code, userAgent, country, referrer);
+      } else {
+        void logClickAndIncrement(cachedData.id, code, userAgent, country, referrer);
+      }
     }
 
     // 6. Return 302 Redirect

@@ -35,8 +35,6 @@ export interface ClickQueueItem {
   referrer: string;
 }
 
-export const clickQueue: { add: (job: ClickQueueItem) => Promise<unknown> } | null = null;
-
 /**
  * Parses cached JSON link data safely.
  * Returns null if string is empty, legacy plain URL string, or invalid JSON.
@@ -65,6 +63,15 @@ export function parseBrowser(ua: string): string {
   if (/chrome|crios/i.test(ua)) return 'Chrome';
   if (/firefox|fxios/i.test(ua)) return 'Firefox';
   if (/safari/i.test(ua)) return 'Safari';
+  return 'Other';
+}
+
+export function parseOs(ua: string): string {
+  if (/windows/i.test(ua)) return 'Windows';
+  if (/android/i.test(ua)) return 'Android';
+  if (/iphone|ipad|ipod/i.test(ua)) return 'iOS';
+  if (/macintosh|mac os x/i.test(ua)) return 'macOS';
+  if (/linux/i.test(ua)) return 'Linux';
   return 'Other';
 }
 
@@ -132,6 +139,7 @@ const WEBHOOK_MILESTONES = new Set([10, 50, 100, 500, 1000, 5000]);
 
 /**
  * Records a click in PostgreSQL and increments the clickCount on the Link record.
+ * Tries BullMQ queue first; falls back to direct DB write if queue unavailable.
  * Also keeps the Redis cache in sync if maxClicks limit is active.
  * Fires milestone webhooks without blocking.
  */
@@ -144,26 +152,29 @@ export async function logClickAndIncrement(
 ): Promise<void> {
   const device = parseDevice(userAgent);
   const browser = parseBrowser(userAgent);
+  const os = parseOs(userAgent);
   const normalizedCountry = country !== 'UNKNOWN' && country ? country.toUpperCase() : null;
   const normalizedReferrer = referrer !== 'Direct' && referrer ? referrer : null;
 
   try {
-    // If an async queue is available, try to enqueue the click
-    if (clickQueue && typeof (clickQueue as { add: (job: ClickQueueItem) => Promise<unknown> }).add === 'function') {
-      try {
-        await (clickQueue as { add: (job: ClickQueueItem) => Promise<unknown> }).add({
+    // Optional BullMQ queue enqueuing for background consumers
+    try {
+      const { getClickQueue } = await import('./queue');
+      const queue = getClickQueue();
+      if (queue) {
+        void queue.add('click', {
           linkId,
           shortCode,
           userAgent,
           country: normalizedCountry || 'UNKNOWN',
           referrer: normalizedReferrer || 'Direct',
-        });
-        return;
-      } catch (queueErr) {
-        console.warn('[Queue Fallback] Queue enqueue failed, falling back to direct DB write:', queueErr);
+        }).catch(() => {});
       }
+    } catch {
+      // Queue unavailable is non-blocking
     }
 
+    // Direct DB write fallback
     const [, updatedLink] = await Promise.all([
       prisma.click.create({
         data: {
@@ -171,6 +182,7 @@ export async function logClickAndIncrement(
           country: normalizedCountry,
           device,
           browser,
+          os,
           referrer: normalizedReferrer,
         },
       }),

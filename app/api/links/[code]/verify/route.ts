@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import crypto from 'crypto';
+import bcrypt from 'bcryptjs';
 import { prisma } from '@/lib/db';
 import { resolveDestination, parseDevice, logClickAndIncrement } from '@/lib/routing';
 
@@ -45,12 +46,19 @@ export async function POST(
     }
 
     if (link.passwordHash) {
-      const hashedInput = crypto
-        .createHash('sha256')
-        .update(password)
-        .digest('hex');
+      let isValid = false;
+      try {
+        if (link.passwordHash.startsWith('$2a$') || link.passwordHash.startsWith('$2b$')) {
+          isValid = await bcrypt.compare(password, link.passwordHash);
+        } else {
+          const hashedInput = crypto.createHash('sha256').update(password).digest('hex');
+          isValid = hashedInput === link.passwordHash;
+        }
+      } catch {
+        isValid = false;
+      }
 
-      if (hashedInput !== link.passwordHash) {
+      if (!isValid) {
         return NextResponse.json({ error: 'Incorrect password' }, { status: 401 });
       }
     }

@@ -10,8 +10,9 @@ const navLinks = [
   { href: "/dashboard", label: "Dashboard" },
   { href: "/dashboard/bio", label: "Bio Link" },
   { href: "/dashboard/webhooks", label: "Webhooks" },
-  { href: "/#features", label: "Features" },
+  { href: "/dashboard/keys", label: "API Keys" },
 ];
+
 
 export default function Navbar() {
   const pathname = usePathname();

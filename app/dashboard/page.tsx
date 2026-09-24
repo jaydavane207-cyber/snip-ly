@@ -21,6 +21,7 @@ import {
   Globe,
   UserCheck,
   Power,
+  Megaphone,
 } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
@@ -393,7 +394,8 @@ export default function DashboardPage() {
             <div className="flex items-center gap-1.5 text-xs text-slate-500">
               <span>Campaign:</span>
               <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-violet-50 text-violet-700 border border-violet-100 font-medium">
-                📣 {selectedCampaign}
+                <Megaphone className="w-3 h-3 text-violet-600" />
+                {selectedCampaign}
                 <button
                   onClick={() => setSelectedCampaign(null)}
                   className="text-violet-400 hover:text-violet-700"
@@ -570,7 +572,8 @@ export default function DashboardPage() {
                                         }`}
                                         title={`Filter by campaign: ${link.utmCampaign}`}
                                       >
-                                        📣 {link.utmCampaign}
+                                        <Megaphone className="w-2.5 h-2.5 mr-1" />
+                                        {link.utmCampaign}
                                       </button>
                                     )}
                                   </div>

@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { username, displayName, bio, avatarUrl, socialLinks } = validation.data;
+    const { username, displayName, bio, avatarUrl, theme, socialLinks } = validation.data;
 
     // Check unique across other userIds
     const existingWithUsername = await prisma.profile.findUnique({
@@ -70,6 +70,7 @@ export async function POST(req: NextRequest) {
           displayName: displayName || null,
           bio: bio || null,
           avatarUrl: avatarUrl || null,
+          theme: theme || null,
           socialLinks: jsonSocialLinks,
         },
       });
@@ -81,10 +82,12 @@ export async function POST(req: NextRequest) {
           displayName: displayName || null,
           bio: bio || null,
           avatarUrl: avatarUrl || null,
+          theme: theme || null,
           socialLinks: jsonSocialLinks,
         },
       });
     }
+
 
     return NextResponse.json({ profile });
   } catch (error) {
