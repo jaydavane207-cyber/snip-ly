@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { nanoid } from 'nanoid';
 import crypto from 'crypto';
 import { prisma } from '@/lib/db';
+import { redis } from '@/lib/redis';
 import { getAuthUserId } from '@/lib/auth';
 import { createLinkSchema, calculateExpiresAt } from '@/lib/validations';
 
@@ -72,6 +73,34 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    // Rate limit: 10 requests per IP per 60 seconds
+    const ip =
+      req.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+      req.headers.get('x-real-ip') ||
+      'unknown';
+    const rateLimitKey = `ratelimit:${ip}`;
+
+    try {
+      const count = await redis.incr(rateLimitKey);
+      if (count === 1) {
+        await redis.expire(rateLimitKey, 60);
+      }
+      if (count > 10) {
+        return NextResponse.json(
+          { error: 'Too many requests' },
+          {
+            status: 429,
+            headers: {
+              'Retry-After': '60',
+              'X-RateLimit-Limit': '10',
+            },
+          }
+        );
+      }
+    } catch (redisErr) {
+      console.warn('Redis rate limit check failed:', redisErr);
+    }
+
     const body = await req.json();
     const validation = createLinkSchema.safeParse(body);
 
@@ -228,7 +257,7 @@ export async function POST(req: NextRequest) {
         utmCampaign: link.utmCampaign,
         rules: link.rules,
       },
-      { status: 201 }
+      { status: 200 }
     );
   } catch (error) {
     console.error('Error creating link:', error);

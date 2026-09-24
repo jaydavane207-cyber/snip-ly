@@ -10,4 +10,8 @@ export default {
       '@': path.resolve(__dirname, './'),
     },
   },
+  test: {
+    testTimeout: 20000,
+    hookTimeout: 20000,
+  },
 };

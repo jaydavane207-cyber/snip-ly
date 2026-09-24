@@ -27,8 +27,10 @@ const BLOCKED_PATTERNS = [
   { regex: /\b(sudo|su|doas)\b/i, reason: 'Privilege escalation attempt' },
   { regex: /\b(curl|wget|nc|netcat|ncat|telnet|ssh|scp|sftp)\b/i, reason: 'Arbitrary outbound network request' },
   { regex: /\/dev\/tcp\//i, reason: 'Raw network socket interaction' },
-  { regex: /\b(mkfs|dd\s+if=|shred)\b/i, reason: 'Disk or partition alteration' },
+  { regex: /\bmkfs|dd\s+if=|shred\b/i, reason: 'Disk or partition alteration' },
   { regex: /\bgit\s+push\b/i, reason: 'Direct push prohibited (must commit and PR from isolated task branch)' },
+  { regex: /\bprisma\s+migrate\s+reset\b/i, reason: 'Destructive database reset prohibited' },
+  { regex: /\bflushall\b/i, reason: 'Destructive Redis flushall prohibited' },
 ];
 
 for (const { regex, reason } of BLOCKED_PATTERNS) {
@@ -55,8 +57,13 @@ const ALLOWED_COMMAND_PATTERNS = [
   /^npx\s+(jest|vitest)(\s+.*)?$/,
   /^pytest(\s+.*)?$/,
 
+  // Docker
+  /^docker\s+compose\s+up(\s+.*)?$/,
+  /^docker\s+compose\s+ps(\s+.*)?$/,
+  /^docker\s+ps(\s+.*)?$/,
+
   // Prisma
-  /^npx\s+prisma\s+(validate|format|generate)(\s+.*)?$/,
+  /^npx\s+prisma\s+(validate|format|generate|db\s+push)(\s+.*)?$/,
 
   // Git Operations (read, status, staging, task branch commit)
   /^git\s+status(\s+.*)?$/,

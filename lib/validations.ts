@@ -1,18 +1,26 @@
 import { z } from 'zod';
 
+export const safeHttpUrl = z
+  .string()
+  .url('Invalid URL format')
+  .refine(
+    (url) => url.startsWith('http://') || url.startsWith('https://'),
+    'URL must start with http:// or https://'
+  );
+
 export const linkRuleSchema = z.object({
   type: z.enum(['country', 'device']),
   value: z.string().min(1).max(10),
-  destinationUrl: z.string().url('Invalid destination URL'),
+  destinationUrl: safeHttpUrl,
 });
 
 export const splitDestinationSchema = z.object({
-  url: z.string().url('Invalid split destination URL'),
+  url: safeHttpUrl,
   weight: z.number().int().min(1).max(100),
 });
 
 export const createLinkSchema = z.object({
-  originalUrl: z.string().url('Invalid URL format'),
+  originalUrl: safeHttpUrl,
   customAlias: z
     .string()
     .regex(
@@ -57,7 +65,7 @@ export function calculateExpiresAt(expiresIn?: '1h' | '24h' | '7d' | 'never'): D
 
 export const updateLinkSchema = z.object({
   title: z.string().max(100).optional().nullable(),
-  originalUrl: z.string().url().optional(),
+  originalUrl: safeHttpUrl.optional(),
   folder: z.string().max(30).optional().nullable(),
   tags: z.array(z.string().max(30)).max(10).optional(),
   isFavorite: z.boolean().optional(),
@@ -71,7 +79,7 @@ export const updateLinkSchema = z.object({
       z.object({
         type: z.enum(['country', 'device']),
         value: z.string().min(1).max(10),
-        destinationUrl: z.string().url(),
+        destinationUrl: safeHttpUrl,
       })
     )
     .max(10)

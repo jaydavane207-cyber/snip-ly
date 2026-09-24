@@ -6,6 +6,7 @@ import {
   parseDevice,
   pickSplitDestination,
   logClickAndIncrement,
+  parseCachedLinkData,
   type CachedLinkData,
 } from '@/lib/routing';
 
@@ -28,18 +29,10 @@ export async function GET(
     try {
       const cachedStr = await redis.get(cacheKey);
       if (cachedStr) {
-        if (cachedStr.startsWith('{')) {
-          try {
-            cachedData = JSON.parse(cachedStr) as CachedLinkData;
-          } catch {
-            // Corrupt JSON — delete and force DB miss
-            await redis.del(cacheKey);
-            cachedData = null;
-          }
-        } else {
-          // Legacy string cache — delete and force DB miss so we write the new JSON format
+        cachedData = parseCachedLinkData(cachedStr);
+        if (!cachedData) {
+          // Corrupt JSON or legacy string cache — delete key to force clean DB miss
           await redis.del(cacheKey);
-          cachedData = null;
         }
       }
     } catch (redisErr) {
@@ -49,17 +42,21 @@ export async function GET(
     // Check conditions on Cache HIT
     if (cachedData && cachedData.id) {
       if (!cachedData.isActive) {
+        await redis.del(cacheKey);
         return NextResponse.json({ error: 'Short link is inactive' }, { status: 404 });
       }
       if (cachedData.expiresAt && new Date(cachedData.expiresAt) < new Date()) {
+        await redis.del(cacheKey);
         return NextResponse.json({ error: 'Short link has expired' }, { status: 404 });
       }
-      if (
-        cachedData.maxClicks &&
-        typeof cachedData.clickCount === 'number' &&
-        cachedData.clickCount >= cachedData.maxClicks
-      ) {
-        return NextResponse.json({ error: 'Short link click limit reached' }, { status: 404 });
+      if (cachedData.maxClicks) {
+        const current = await prisma.link.findUnique({
+          where: { id: cachedData.id },
+          select: { clickCount: true },
+        });
+        if (current && current.clickCount >= cachedData.maxClicks) {
+          return NextResponse.json({ error: 'Short link click limit reached' }, { status: 404 });
+        }
       }
       if (cachedData.passwordHash) {
         return NextResponse.redirect(new URL(`/verify/${code}`, request.url), 302);

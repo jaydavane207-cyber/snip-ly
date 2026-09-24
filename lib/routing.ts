@@ -27,6 +27,34 @@ export interface CachedLinkData {
   splitDestinations?: SplitDestination[];
 }
 
+export interface ClickQueueItem {
+  linkId: string;
+  shortCode: string;
+  userAgent: string;
+  country: string;
+  referrer: string;
+}
+
+export const clickQueue: { add: (job: ClickQueueItem) => Promise<unknown> } | null = null;
+
+/**
+ * Parses cached JSON link data safely.
+ * Returns null if string is empty, legacy plain URL string, or invalid JSON.
+ */
+export function parseCachedLinkData(cachedStr: string | null | undefined): CachedLinkData | null {
+  if (!cachedStr || typeof cachedStr !== 'string') return null;
+  if (!cachedStr.startsWith('{')) return null;
+  try {
+    const data = JSON.parse(cachedStr) as CachedLinkData;
+    if (data && typeof data === 'object' && data.id && typeof data.originalUrl === 'string') {
+      return data;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export function parseDevice(ua: string): 'mobile' | 'desktop' {
   return /mobile|android|iphone|ipad/i.test(ua) ? 'mobile' : 'desktop';
 }
@@ -120,6 +148,22 @@ export async function logClickAndIncrement(
   const normalizedReferrer = referrer !== 'Direct' && referrer ? referrer : null;
 
   try {
+    // If an async queue is available, try to enqueue the click
+    if (clickQueue && typeof (clickQueue as { add: (job: ClickQueueItem) => Promise<unknown> }).add === 'function') {
+      try {
+        await (clickQueue as { add: (job: ClickQueueItem) => Promise<unknown> }).add({
+          linkId,
+          shortCode,
+          userAgent,
+          country: normalizedCountry || 'UNKNOWN',
+          referrer: normalizedReferrer || 'Direct',
+        });
+        return;
+      } catch (queueErr) {
+        console.warn('[Queue Fallback] Queue enqueue failed, falling back to direct DB write:', queueErr);
+      }
+    }
+
     const [, updatedLink] = await Promise.all([
       prisma.click.create({
         data: {
