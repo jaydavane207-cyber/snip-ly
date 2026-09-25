@@ -1,196 +1,176 @@
-# Snip.ly - Production URL Shortener & Link Management Platform
+# Snip.ly — Modern URL Shortener & Link Platform
 
-A high-performance, enterprise-grade URL shortener and bio-link management platform built with Next.js 14 App Router, PostgreSQL 16, Redis 7, Prisma ORM, BullMQ, and Tailwind CSS.
+> High-performance, production-ready URL shortener, dynamic routing engine, and bio-link hub built with Next.js 14 App Router, PostgreSQL, Redis, BullMQ, and Tailwind CSS.
 
----
-
-## Architecture Overview
-
-```
-                                      +------------------------+
-                                      |     Client Browser     |
-                                      +-----------+------------+
-                                                  |
-                    +-----------------------------+-----------------------------+
-                    |                                                           |
-          [ Redirect: /s/:code ]                                       [ API / Dashboard ]
-                    |                                                           |
-        +-----------v-----------+                                   +-----------v-----------+
-        |   Redis Cache Lookup  |                                   |  Next.js 14 App Router|
-        +-----+-----------+-----+                                   |  Zod Schema Validation|
-              |           |                                         +-----------+-----------+
-         (Cache Hit) (Cache Miss)                                               |
-              |           |                                         +-----------v-----------+
-              |     +-----v-----+                                   |   PostgreSQL 16 DB    |
-              |     | PostgreSQL|                                   |     (Prisma ORM)      |
-              |     +-----+-----+                                   +-----------------------+
-              |           |
-        +-----v-----------v-----+
-        |  Rule Resolution:     |
-        |  1. Country (GeoIP)   |
-        |  2. Device (Mobile/PC)|
-        |  3. A/B Split (Weight)|
-        |  4. Original URL      |
-        +-----------+-----------+
-                    |
-        +-----------v-----------+
-        |  302 Found Redirect   |
-        +-----------+-----------+
-                    | (async non-blocking)
-        +-----------v-----------+
-        |  BullMQ Click Queue   |-----> [ Background Worker: clickWorker.ts ]
-        |  (Redis 7 Stream)     |-----> [ DB Persistence + Webhook Milestones ]
-        +-----------------------+
-```
+**Live Demo**: [UPDATE_AFTER_DEPLOY]
 
 ---
 
-## Core Capabilities
+## 🚀 Features Grid
 
-- **Ultra-Fast Redirects with Redis Caching**: Sub-millisecond redirects served directly from Redis with 1-hour sliding TTL.
-- **Smart Dynamic Routing**: Geolocation routing (GeoIP) and device-specific routing (mobile vs. desktop).
-- **A/B Split Testing**: Weighted multi-destination traffic distribution across up to 5 target URLs.
-- **Asynchronous Click Ingestion (BullMQ)**: High-throughput click event queueing powered by Redis and processed by background worker processes.
-- **Live Real-Time Analytics & CSV Export**: Real-time click counters, 60-minute live velocity, active user estimations, country/browser breakdowns, and one-click CSV export.
-- **Developer REST API**: Programmatic link creation via `/api/v1/shorten` authenticated by revocable SHA-256 API keys (`x-api-key: snip_...`).
-- **Bio Link Hubs**: Customizable public bio profiles (`/b/:username`) displaying selected verified links and social profiles.
-- **Webhook Milestones**: Automatic webhook dispatch on click milestones (10, 50, 100, 500, 1000, 5000) with timeout safety.
-- **AI-Powered Alias & Metadata Generation**: Automated custom alias and metadata generation using Google Gemini 2.0 Flash with deterministic fallback.
-- **Password Protection & Expiry**: Bcrypt-hashed password protection unlock screens and time-based link expiration (`1h`, `24h`, `7d`, `never`).
-- **Security & SSRF Hardening**: Private IP and localhost filtering, input sanitation, and rate limiting (10 requests/minute per IP).
-
----
-
-## Tech Stack
-
-| Layer | Technology |
+| Feature | Description |
 |---|---|
-| Framework | Next.js 14.2 (App Router, Server Components, Route Handlers) |
-| Language | TypeScript 5 |
-| Database | PostgreSQL 16 (via Prisma ORM 6) |
-| Caching & Queue | Redis 7 (via ioredis and BullMQ) |
-| Worker Process | tsx running BullMQ Worker |
-| Styling | Tailwind CSS, Lucide Icons, Framer Motion |
-| Charts & UI | Recharts, Sonner (Toasts), QRCode.react |
-| Testing | Vitest 5 |
+| ⚡ **URL Shortening** | Instant short link creation with custom aliases, auto-generated favicons, and QR codes. |
+| 🌍 **Smart Redirects** | Route visitors dynamically by country (GeoIP ISO codes) or device type (Mobile vs. Desktop). |
+| 🔀 **A/B Testing** | Weighted traffic split across multiple destinations with statistical validation. |
+| 🏷️ **UTM Builder** | Automated UTM parameter appending (`utm_source`, `utm_medium`, `utm_campaign`). |
+| 📊 **Live Analytics** | Real-time click counters, 60-min velocity, country/browser breakdowns, and CSV export. |
+| 🤖 **AI Suggestions** | AI-generated catchy slugs and metadata via Google Gemini 2.0 Flash with local fallback. |
+| 👤 **Bio Link Hubs** | Public `/b/:username` landing pages displaying verified link collections and social profiles. |
+| 🔔 **Webhooks** | Automated webhook dispatch on click milestones (`10`, `50`, `100`, `500`, `1000`, `5000`). |
+| 🔑 **API Keys** | Programmatic REST API access with SHA-256 hashed API keys (`snip_...`). |
+| 🔒 **Access Controls** | Bcrypt password protection unlock screen, expiration dates, and max click limits. |
 
 ---
 
-## Getting Started
+## 🛠️ Tech Stack
 
-### 1. Prerequisites
-- Node.js 18+ (Node 20+ recommended)
-- Docker & Docker Compose (or local PostgreSQL & Redis)
+- **Framework**: Next.js 14 (App Router, Server Components & Route Handlers)
+- **Language**: TypeScript 5
+- **Database**: PostgreSQL 16 via Prisma ORM 6
+- **Caching & State**: Redis 7 via `ioredis` (Supports Upstash `rediss://` TLS)
+- **Job Queue**: BullMQ (with automatic direct PostgreSQL fallback for serverless)
+- **Authentication**: Optional Clerk integration with graceful non-authenticated fallback
+- **Styling & UI**: Tailwind CSS, Framer Motion, Lucide Icons, Sonner Toasts
+- **Testing**: Vitest (Unit, Integration, and Frontend Smoke tests)
 
-### 2. Infrastructure Setup
-Start the PostgreSQL 16 and Redis 7 containers:
+---
+
+## 📐 Architecture
+
+```text
+                                  +------------------+
+                                  |   User Browser   |
+                                  +--------+---------+
+                                           |
+                                           v
+                             +-----------------------------+
+                             |     Next.js 14 Server       |
+                             |  (App Router / Serverless)  |
+                             +--------------+--------------+
+                                            |
+                         +------------------+------------------+
+                         |                                     |
+               [ Cache Lookup ]                              [ Miss ]
+                         v                                     v
+             +-----------------------+               +-------------------+
+             |    Redis JSON Cache   |               |   PostgreSQL DB   |
+             |   (Sub-ms Redirect)   |               |   (Prisma ORM)    |
+             +-----------+-----------+               +---------+---------+
+                         |                                     |
+                         +------------------+------------------+
+                                            |
+                                            v
+                                 +---------------------+
+                                 | 302 Target Redirect |
+                                 +----------+----------+
+                                            |
+                                            v
+                       +-----------------------------------------+
+                       |        Async Click Ingestion            |
+                       |  1. Try BullMQ Queue -> Worker Process  |
+                       |  2. Direct PostgreSQL fallback on error |
+                       +-----------------------------------------+
+```
+
+---
+
+## 💻 Run Locally
+
+### 1. Start Infrastructure
+Run PostgreSQL and Redis via Docker Compose:
 ```bash
 docker compose up -d
 ```
 
-Verify containers are running:
+### 2. Configure Environment
+Copy `.env.example` to `.env`:
 ```bash
-docker ps
+cp .env.example .env
 ```
 
-### 3. Environment Configuration
-Verify your `.env` file contains valid database and cache connection strings:
-```env
-DATABASE_URL="postgresql://postgres:postgres@localhost:5432/urldb?schema=public"
-REDIS_URL="redis://localhost:6379"
-NEXT_PUBLIC_BASE_URL="http://localhost:3000"
-GEMINI_API_KEY=""
-```
-
-### 4. Database Schema Sync
-Generate the Prisma client and sync schema to PostgreSQL:
+### 3. Sync Database Schema
+Push the Prisma schema to your local database:
 ```bash
 npx prisma db push
 ```
 
-### 5. Running the Application
-Run the Next.js development server:
+### 4. Run Development Server and Worker
+In **Terminal 1** (Next.js dev server):
 ```bash
 npm run dev
 ```
 
-In a separate terminal, launch the background click processing worker:
+In **Terminal 2** (BullMQ asynchronous worker):
 ```bash
 npm run worker
 ```
 
-Open [http://localhost:3000](http://localhost:3000) in your browser.
+### 5. Explore Interactive Demo Mode
+1. Open [http://localhost:3000/demo](http://localhost:3000/demo) in your browser.
+2. Click **"Seed Realistic Demo Data"** to automatically populate sample links, smart routes, A/B splits, and 50 realistic historical clicks.
+3. Walk through the interactive feature tours or test smart routing live!
 
 ---
 
-## Production Build & Scripts
+## 🔐 Environment Variables
 
-- `npm run build`: Generates Prisma client and compiles production Next.js application with zero warnings/errors.
-- `npm run start`: Starts the optimized production Next.js HTTP server.
-- `npm run worker`: Starts the BullMQ background worker for queue processing.
-- `npm run lint`: Runs ESLint across all source directories (`app/`, `lib/`, `components/`, `workers/`).
-- `npm test`: Executes all Vitest unit and integration test suites.
+| Variable | Description | Example / Required |
+|---|---|---|
+| `DATABASE_URL` | PostgreSQL connection string | `postgresql://postgres:postgres@localhost:5432/urldb?schema=public` |
+| `REDIS_URL` | Redis connection URL (`rediss://` for Upstash) | `redis://localhost:6379` |
+| `NEXT_PUBLIC_BASE_URL` | Application root URL for short links | `https://snip-ly.vercel.app` or `http://localhost:3000` |
+| `NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY` | Clerk publishable key (Optional) | `pk_test_...` |
+| `CLERK_SECRET_KEY` | Clerk secret key (Optional) | `sk_test_...` |
+| `GEMINI_API_KEY` | Google Gemini API key (Optional) | `AIzaSy...` (from Google AI Studio) |
 
 ---
 
-## REST API Documentation
+## 📡 REST API Documentation
 
-### Create Short Link (REST v1)
-`POST /api/v1/shorten`
+### 1. Create a Short Link
+```http
+POST /api/links
+Content-Type: application/json
 
-Headers:
-- `Content-Type: application/json`
-- `x-api-key: snip_your_api_key_here`
-
-Request Body:
-```json
 {
-  "originalUrl": "https://example.com/target-landing-page",
-  "customAlias": "custom-promo",
-  "expiresIn": "7d",
-  "title": "Promo Campaign",
+  "originalUrl": "https://example.com/long-page-url",
+  "customAlias": "my-promo",
   "folder": "Marketing",
-  "tags": ["promo", "summer"]
+  "tags": ["launch", "q4"],
+  "rules": [
+    { "type": "device", "value": "mobile", "destinationUrl": "https://m.example.com" }
+  ]
 }
 ```
 
-Response (`200 OK`):
-```json
+### 2. Redirect Short Link
+```http
+GET /s/:code
+```
+Returns `302 Found` with `Location` pointing to the resolved destination (evaluating GeoIP, device rules, and A/B split weights).
+
+### 3. Developer API (External Shortening)
+```http
+POST /api/v1/shorten
+Content-Type: application/json
+x-api-key: snip_YOUR_API_KEY
+
 {
-  "id": "cuid_here",
-  "shortCode": "custom-promo",
-  "shortUrl": "http://localhost:3000/s/custom-promo",
-  "originalUrl": "https://example.com/target-landing-page",
-  "title": "Promo Campaign"
+  "originalUrl": "https://example.com",
+  "customAlias": "api-docs"
 }
 ```
-
-### Export Click Analytics (CSV)
-`GET /api/links/:code/export`
-
-Returns a CSV file attachment containing:
-- `timestamp`: ISO-8601 click timestamp
-- `country`: Two-letter ISO country code or UNKNOWN
-- `device`: `desktop` or `mobile`
-- `browser`: Detected browser family
-- `os`: Operating system family
-- `referrer`: HTTP referrer URL or Direct
 
 ---
 
-## Testing & Quality Assurance
+## 🧪 Running Tests
 
-Run the test suite:
+Run the full automated test suite (Unit, Integration, and Smoke tests):
 ```bash
 npx vitest run
 ```
-
-All 88 test cases across 8 test suites pass:
-1. `tests/routing.unit.test.ts` (20 tests): Destination resolution, smart routing rules, weighted A/B split calculations.
-2. `tests/api.integration.test.ts` (18 tests): Full HTTP API lifecycle, redirects, rate limiting, UTM parameters, password verification, max clicks enforcement.
-3. `tests/frontend.smoke.test.ts` (4 tests): Route smoke tests for dashboard, bio links, and analytics.
-4. `lib/__tests__/verify.test.ts` (5 tests): Password hashing and comparison logic.
-5. `lib/__tests__/routing.test.ts` (13 tests): Smart rule matchers and device parsing.
-6. `lib/__tests__/metadata.test.ts` (6 tests): SSRF protection and metadata extraction.
-7. `lib/__tests__/schemas.test.ts` (11 tests): Zod validation schemas.
-8. `lib/__tests__/v3_features.test.ts` (11 tests): Webhooks, live stats, and bio hubs.
+Or run in watch mode:
+```bash
+npm test
+```

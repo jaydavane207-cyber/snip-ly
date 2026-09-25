@@ -166,7 +166,7 @@ export async function logClickAndIncrement(
         const { getClickQueue } = await import('./queue');
         const queue = getClickQueue();
         if (queue) {
-          const workers = await queue.getWorkers();
+          const workers = await queue.getWorkers().catch(() => []);
           if (workers && workers.length > 0) {
             await queue.add('click', {
               linkId,
@@ -178,66 +178,67 @@ export async function logClickAndIncrement(
             queued = true;
           }
         }
-      } catch {
-        // Queue unavailable is non-blocking — proceed to direct DB fallback
+      } catch (queueErr) {
+        console.warn('[Queue Fallback]:', queueErr instanceof Error ? queueErr.message : queueErr);
+        queued = false;
       }
     }
 
     if (!queued) {
       // Direct DB write fallback
-    const [, updatedLink] = await Promise.all([
-      prisma.click.create({
-        data: {
-          linkId,
-          country: normalizedCountry,
-          device,
-          browser,
-          os,
-          referrer: normalizedReferrer,
-        },
-      }),
-      prisma.link.update({
-        where: { id: linkId },
-        data: { clickCount: { increment: 1 } },
-        select: { clickCount: true, userId: true, shortCode: true },
-      }),
-    ]);
-
-    const newCount = updatedLink.clickCount;
-
-    // Fire milestone webhooks without blocking
-    if (WEBHOOK_MILESTONES.has(newCount)) {
-      try {
-        void triggerWebhook(updatedLink.userId, {
-          event: 'milestone',
-          shortCode: updatedLink.shortCode,
-          clickCount: newCount,
-          recentClick: {
+      const [, updatedLink] = await Promise.all([
+        prisma.click.create({
+          data: {
+            linkId,
             country: normalizedCountry,
             device,
             browser,
-            createdAt: new Date().toISOString(),
+            os,
+            referrer: normalizedReferrer,
           },
-        });
-      } catch {
-        // Never crash the worker
-      }
-    }
+        }),
+        prisma.link.update({
+          where: { id: linkId },
+          data: { clickCount: { increment: 1 } },
+          select: { clickCount: true, userId: true, shortCode: true },
+        }),
+      ]);
 
-    // Keep Redis cache in sync
-    try {
-      const cacheKey = `short:${shortCode}`;
-      const cachedStr = await redis.get(cacheKey);
-      if (cachedStr && cachedStr.startsWith('{')) {
-        const cachedData = JSON.parse(cachedStr);
-        cachedData.clickCount = (cachedData.clickCount || 0) + 1;
-        await redis.set(cacheKey, JSON.stringify(cachedData), 'EX', 3600);
+      const newCount = updatedLink.clickCount;
+
+      // Fire milestone webhooks without blocking
+      if (WEBHOOK_MILESTONES.has(newCount)) {
+        try {
+          void triggerWebhook(updatedLink.userId, {
+            event: 'milestone',
+            shortCode: updatedLink.shortCode,
+            clickCount: newCount,
+            recentClick: {
+              country: normalizedCountry,
+              device,
+              browser,
+              createdAt: new Date().toISOString(),
+            },
+          });
+        } catch {
+          // Never crash the worker
+        }
       }
-    } catch {
-      // Redis sync failure is non-blocking
+
+      // Keep Redis cache in sync
+      try {
+        const cacheKey = `short:${shortCode}`;
+        const cachedStr = await redis.get(cacheKey);
+        if (cachedStr && cachedStr.startsWith('{')) {
+          const cachedData = JSON.parse(cachedStr);
+          cachedData.clickCount = (cachedData.clickCount || 0) + 1;
+          await redis.set(cacheKey, JSON.stringify(cachedData), 'EX', 3600);
+        }
+      } catch {
+        // Redis sync failure is non-blocking
+      }
     }
+  } catch (err) {
+    console.warn('Click logging failed gracefully:', err instanceof Error ? err.message : err);
   }
-} catch (err) {
-  console.error('Click logging failed:', err);
-}
 }

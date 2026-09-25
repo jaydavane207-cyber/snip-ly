@@ -11,7 +11,7 @@ function createRedisInstance(): Redis {
   const client = new Redis(redisUrl, {
     maxRetriesPerRequest: null,
     enableReadyCheck: false,
-    lazyConnect: true,
+    lazyConnect: false,
     tls: isTls ? { rejectUnauthorized: false } : undefined,
     retryStrategy(times) {
       const delay = Math.min(times * 50, 2000);

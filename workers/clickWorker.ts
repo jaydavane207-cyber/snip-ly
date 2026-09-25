@@ -8,6 +8,7 @@ const isTls = redisUrl.startsWith('rediss://');
 const connection = new IORedis(redisUrl, {
   maxRetriesPerRequest: null,
   enableReadyCheck: false,
+  lazyConnect: false,
   tls: isTls ? { rejectUnauthorized: false } : undefined,
 });
 

@@ -11,7 +11,7 @@ function getConnection(): IORedis {
     connection = new IORedis(redisUrl, {
       maxRetriesPerRequest: null,
       enableReadyCheck: false,
-      lazyConnect: true,
+      lazyConnect: false,
       tls: isTls ? { rejectUnauthorized: false } : undefined,
     });
     connection.on('error', (err) => {

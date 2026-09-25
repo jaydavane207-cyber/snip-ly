@@ -10,13 +10,13 @@ export async function POST() {
   try {
     // 1. Guard check: only allow localhost / 127.0.0.1, explicitly block cloud databases
     const dbUrl = process.env.DATABASE_URL || '';
-    if (!dbUrl.includes('localhost') && !dbUrl.includes('127.0.0.1')) {
+    if (process.env.NODE_ENV === 'production' || (!dbUrl.includes('localhost') && !dbUrl.includes('127.0.0.1'))) {
       return NextResponse.json(
         { error: 'Demo seeding is only allowed in local development environment' },
         { status: 403 }
       );
     }
-    if (dbUrl.includes('neon.tech') || dbUrl.includes('supabase.co')) {
+    if (dbUrl.includes('neon.tech') || dbUrl.includes('supabase.co') || dbUrl.includes('upstash')) {
       return NextResponse.json(
         { error: 'Demo seeding is disabled for cloud databases' },
         { status: 403 }
@@ -191,7 +191,7 @@ export async function POST() {
         socialLinks: {
           twitter: 'https://twitter.com',
           github: 'https://github.com/jaydavane207-cyber/url-shortener',
-          website: 'http://localhost:3000',
+          website: process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000',
         },
       },
       create: {
@@ -204,7 +204,7 @@ export async function POST() {
         socialLinks: {
           twitter: 'https://twitter.com',
           github: 'https://github.com/jaydavane207-cyber/url-shortener',
-          website: 'http://localhost:3000',
+          website: process.env.NEXT_PUBLIC_BASE_URL || 'http://localhost:3000',
         },
       },
     });

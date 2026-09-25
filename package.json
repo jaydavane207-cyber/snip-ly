@@ -11,6 +11,9 @@
     "lint": "next lint",
     "test": "vitest run"
   },
+  "engines": {
+    "node": "20.x"
+  },
   "dependencies": {
     "@prisma/client": "^6.19.3",
     "@vitejs/plugin-react": "^6.1.1",

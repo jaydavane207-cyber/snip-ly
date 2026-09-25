@@ -106,7 +106,7 @@ export default function KeysPage() {
   -H "Content-Type: application/json" \\
   -H "x-api-key: ${revealedKey}" \\
   -d '{"originalUrl":"https://example.com"}'`
-    : `curl -X POST http://localhost:3000/api/v1/shorten \\
+    : `curl -X POST ${process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"}/api/v1/shorten \\
   -H "Content-Type: application/json" \\
   -H "x-api-key: snip_YOUR_KEY_HERE" \\
   -d '{"originalUrl":"https://example.com"}'`;

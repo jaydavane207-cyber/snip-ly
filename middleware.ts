@@ -1,43 +1,48 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 /**
- * Middleware — no-op when Clerk is not installed.
- * When Clerk IS installed, import clerkMiddleware from @clerk/nextjs/server.
- * Public routes: /, /s/(.*), /b/(.*), /verify/(.*), /api/bio/(.*), /api/metadata, /api/ai/generate
- * Protected routes: /dashboard(/.*)?
+ * Next.js Middleware with Clerk Auth Support.
+ * 
+ * When @clerk/nextjs is installed:
+ *   - Uses clerkMiddleware + createRouteMatcher
+ *   - Public routes: /, /demo, /s/(.*), /b/(.*), /verify/(.*), /api/bio/(.*), /api/metadata, /api/ai/generate, /api/demo/(.*)
+ *   - Protected routes: /dashboard(.*)
+ * 
+ * When Clerk is not installed (e.g., initial local dev without Clerk keys):
+ *   - Gracefully passes requests through to prevent build or runtime breakages.
  */
 export async function middleware(req: NextRequest) {
   try {
-    // Try to use Clerk if available
     const pkg = '@clerk/nextjs/server';
     const clerk = await import(/* webpackIgnore: true */ pkg).catch(() => null);
 
     if (clerk && typeof clerk.clerkMiddleware === 'function') {
-      const publicRoutes = [
+      const publicRoutePatterns = [
         '/',
         '/demo',
-        '/demo/(.*)',
-        '/api/demo/(.*)',
         '/s/(.*)',
         '/b/(.*)',
         '/verify/(.*)',
         '/api/bio/(.*)',
         '/api/metadata',
         '/api/ai/generate',
-        '/api/links',
-        '/api/links/(.*)',
-        '/api/webhooks',
-        '/api/webhooks/(.*)',
+        '/api/demo/(.*)',
       ];
 
+      const isPublicRoute = typeof clerk.createRouteMatcher === 'function'
+        ? clerk.createRouteMatcher(publicRoutePatterns)
+        : (request: NextRequest) => {
+            const pathname = request.nextUrl.pathname;
+            return publicRoutePatterns.some((pattern) => {
+              const regex = new RegExp(`^${pattern.replace(/\(\.\*\)/g, '.*')}$`);
+              return regex.test(pathname);
+            });
+          };
+
       const pathname = req.nextUrl.pathname;
-      const isPublic = publicRoutes.some((route) => {
-        const pattern = route.replace(/\(\.\*\)/g, '.*');
-        return new RegExp(`^${pattern}$`).test(pathname);
-      });
+      const isPublic = isPublicRoute(req);
 
       if (!isPublic && pathname.startsWith('/dashboard')) {
-        // Check auth
         const authFn = clerk.auth as () => Promise<{ userId: string | null }>;
         try {
           const { userId } = await authFn();
@@ -47,12 +52,12 @@ export async function middleware(req: NextRequest) {
             return NextResponse.redirect(signInUrl);
           }
         } catch {
-          // If auth fails, allow through (graceful degradation)
+          // Graceful fallback if auth session lookup fails
         }
       }
     }
   } catch {
-    // Clerk not installed or errored — allow all requests
+    // Clerk not configured or error — allow request through
   }
 
   return NextResponse.next();
