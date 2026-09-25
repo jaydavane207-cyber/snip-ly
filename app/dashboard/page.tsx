@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, Suspense } from "react";
 import { toast } from "sonner";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import Image from "next/image";
 import {
   BarChart3,
@@ -92,9 +93,17 @@ function SkeletonRow() {
   );
 }
 
-export default function DashboardPage() {
+function DashboardContent() {
+  const sp = useSearchParams();
   const [links, setLinks] = useState<LinkItem[]>([]);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(sp.get('search') || '');
+
+  useEffect(() => {
+    const q = sp.get('search');
+    if (q !== null) {
+      setSearch(q);
+    }
+  }, [sp]);
   const [selectedFolder, setSelectedFolder] = useState<string>("all");
   const [selectedTag, setSelectedTag] = useState<string | null>(null);
   const [selectedCampaign, setSelectedCampaign] = useState<string | null>(null);
@@ -452,7 +461,7 @@ export default function DashboardPage() {
 
         {/* Links Table */}
         {(isLoading || links.length > 0) && (
-          <Card padding={false} className="overflow-hidden">
+          <Card id="dashboard-table" padding={false} className="overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
                 <thead>
@@ -741,3 +750,20 @@ export default function DashboardPage() {
     </div>
   );
 }
+
+export default function DashboardPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-slate-50 flex items-center justify-center p-12">
+          <div className="text-sm font-medium text-slate-400 animate-pulse">
+            Loading dashboard...
+          </div>
+        </div>
+      }
+    >
+      <DashboardContent />
+    </Suspense>
+  );
+}
+

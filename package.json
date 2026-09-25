@@ -17,6 +17,7 @@
     "bcryptjs": "^3.0.3",
     "bullmq": "^6.3.8",
     "clsx": "^2.1.1",
+    "driver.js": "^1.8.0",
     "framer-motion": "^13.4.0",
     "geoip-lite": "^2.0.3",
     "ioredis": "^6.0.0",

@@ -83,7 +83,7 @@ export async function POST(
     // Record verified click & sync Redis count
     await logClickAndIncrement(link.id, link.shortCode, userAgent, country, referrer);
 
-    return NextResponse.json({ success: true, destinationUrl });
+    return NextResponse.json({ success: true, destinationUrl, originalUrl: destinationUrl });
   } catch (error) {
     console.error('Error verifying link password:', error);
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });

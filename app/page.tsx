@@ -1,6 +1,7 @@
 import { Zap, BarChart3, ShieldCheck, Code2, ClipboardPaste, Scissors, Share2 } from "lucide-react";
 import ShortenForm from "@/components/ShortenForm";
 import RecentLinks from "@/components/RecentLinks";
+import HomeDemoActions from "@/components/HomeDemoActions";
 import { Badge } from "@/components/ui/Badge";
 import ScrollToTopButton from "@/components/ScrollToTopButton";
 
@@ -70,6 +71,7 @@ export default function HomePage() {
           {/* Form */}
           <div className="max-w-2xl mx-auto">
             <ShortenForm />
+            <HomeDemoActions />
           </div>
         </div>
       </section>

@@ -105,7 +105,7 @@ export default function RecentLinks() {
     process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000";
 
   return (
-    <div className="mt-10">
+    <div id="recent-links" className="mt-10">
       <div className="flex items-center justify-between mb-4">
         <h2 className="text-lg font-semibold text-slate-900">Recent Links</h2>
         <Link

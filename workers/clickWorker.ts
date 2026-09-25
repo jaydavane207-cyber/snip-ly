@@ -135,6 +135,19 @@ const worker = new Worker<{
         }
       }
 
+      // Keep Redis cache in sync
+      try {
+        const cacheKey = `short:${shortCode}`;
+        const cachedStr = await connection.get(cacheKey);
+        if (cachedStr && cachedStr.startsWith('{')) {
+          const cachedData = JSON.parse(cachedStr);
+          cachedData.clickCount = newCount;
+          await connection.set(cacheKey, JSON.stringify(cachedData), 'EX', 3600);
+        }
+      } catch {
+        // Redis sync failure is non-blocking
+      }
+
       console.log(`[Worker] Processed click for ${shortCode} (total: ${newCount})`);
     } catch (err) {
       console.error(`[Worker] Failed to process click for ${linkId}:`, err);

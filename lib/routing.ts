@@ -148,7 +148,8 @@ export async function logClickAndIncrement(
   shortCode: string,
   userAgent: string,
   country: string,
-  referrer: string
+  referrer: string,
+  isMaxClicks?: boolean
 ): Promise<void> {
   const device = parseDevice(userAgent);
   const browser = parseBrowser(userAgent);
@@ -157,24 +158,33 @@ export async function logClickAndIncrement(
   const normalizedReferrer = referrer !== 'Direct' && referrer ? referrer : null;
 
   try {
-    // Optional BullMQ queue enqueuing for background consumers
-    try {
-      const { getClickQueue } = await import('./queue');
-      const queue = getClickQueue();
-      if (queue) {
-        void queue.add('click', {
-          linkId,
-          shortCode,
-          userAgent,
-          country: normalizedCountry || 'UNKNOWN',
-          referrer: normalizedReferrer || 'Direct',
-        }).catch(() => {});
+    let queued = false;
+
+    // For standard clicks without maxClicks, attempt BullMQ queue first if a worker is active
+    if (!isMaxClicks) {
+      try {
+        const { getClickQueue } = await import('./queue');
+        const queue = getClickQueue();
+        if (queue) {
+          const workers = await queue.getWorkers();
+          if (workers && workers.length > 0) {
+            await queue.add('click', {
+              linkId,
+              shortCode,
+              userAgent,
+              country: normalizedCountry || 'UNKNOWN',
+              referrer: normalizedReferrer || 'Direct',
+            });
+            queued = true;
+          }
+        }
+      } catch {
+        // Queue unavailable is non-blocking — proceed to direct DB fallback
       }
-    } catch {
-      // Queue unavailable is non-blocking
     }
 
-    // Direct DB write fallback
+    if (!queued) {
+      // Direct DB write fallback
     const [, updatedLink] = await Promise.all([
       prisma.click.create({
         data: {
@@ -226,7 +236,8 @@ export async function logClickAndIncrement(
     } catch {
       // Redis sync failure is non-blocking
     }
-  } catch (err) {
-    console.error('Click logging failed:', err);
   }
+} catch (err) {
+  console.error('Click logging failed:', err);
+}
 }

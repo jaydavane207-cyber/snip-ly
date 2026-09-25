@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Scissors, GitFork, LayoutDashboard } from "lucide-react";
+import { Scissors, GitFork, LayoutDashboard, Play } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navLinks = [
   { href: "/", label: "Home" },
+  { href: "/demo", label: "Demo" },
   { href: "/dashboard", label: "Dashboard" },
   { href: "/dashboard/bio", label: "Bio Link" },
   { href: "/dashboard/webhooks", label: "Webhooks" },
@@ -18,7 +19,7 @@ export default function Navbar() {
   const pathname = usePathname();
 
   return (
-    <header className="sticky top-0 z-50 w-full backdrop-blur-md bg-white/80 border-b border-slate-100 transition-all">
+    <header id="navbar" className="sticky top-0 z-50 w-full backdrop-blur-md bg-white/80 border-b border-slate-100 transition-all">
       <nav className="max-w-6xl mx-auto px-4 h-16 flex items-center justify-between gap-6">
         {/* Logo */}
         <Link
@@ -53,6 +54,18 @@ export default function Navbar() {
 
         {/* Right actions */}
         <div className="flex items-center gap-2 shrink-0">
+          <Link
+            href="/demo"
+            className={cn(
+              "inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all duration-150 border",
+              pathname === "/demo"
+                ? "bg-indigo-50 text-indigo-600 border-indigo-200"
+                : "text-indigo-600 bg-indigo-50/70 hover:bg-indigo-100/70 border-indigo-100"
+            )}
+          >
+            <Play className="w-3 h-3 fill-indigo-600 text-indigo-600" />
+            Live Demo
+          </Link>
           <a
             href="https://github.com/jaydavane207-cyber/url-shortener"
             target="_blank"

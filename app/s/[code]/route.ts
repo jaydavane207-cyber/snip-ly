@@ -188,9 +188,9 @@ export async function GET(
     // 5. Log Click & sync Redis count
     if (cachedData.id) {
       if (cachedData.maxClicks) {
-        await logClickAndIncrement(cachedData.id, code, userAgent, country, referrer);
+        await logClickAndIncrement(cachedData.id, code, userAgent, country, referrer, true);
       } else {
-        void logClickAndIncrement(cachedData.id, code, userAgent, country, referrer);
+        void logClickAndIncrement(cachedData.id, code, userAgent, country, referrer, false);
       }
     }
 

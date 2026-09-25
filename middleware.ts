@@ -15,6 +15,9 @@ export async function middleware(req: NextRequest) {
     if (clerk && typeof clerk.clerkMiddleware === 'function') {
       const publicRoutes = [
         '/',
+        '/demo',
+        '/demo/(.*)',
+        '/api/demo/(.*)',
         '/s/(.*)',
         '/b/(.*)',
         '/verify/(.*)',

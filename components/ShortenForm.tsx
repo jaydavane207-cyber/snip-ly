@@ -387,7 +387,7 @@ export default function ShortenForm() {
   }, [result]);
 
   return (
-    <div className="w-full space-y-4">
+    <div id="shorten-form" className="w-full space-y-4">
       <Card className="shadow-2xl shadow-indigo-100/60">
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* URL Input */}

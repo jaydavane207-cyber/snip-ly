@@ -33,4 +33,24 @@ if (process.env.NODE_ENV !== 'production') {
   globalForRedis.redis = redis;
 }
 
+/**
+ * Safely delete keys matching a pattern without using KEYS (which blocks Redis).
+ * Uses SCAN with cursor in batches of 100.
+ */
+export async function delPattern(prefix: string): Promise<void> {
+  try {
+    let cursor = '0';
+    do {
+      const [nc, keys] = await redis.scan(cursor, 'MATCH', prefix, 'COUNT', 100);
+      cursor = nc;
+      if (keys.length > 0) {
+        await redis.del(...keys);
+      }
+    } while (cursor !== '0');
+  } catch (err) {
+    console.warn('[Redis delPattern notice]:', err instanceof Error ? err.message : err);
+  }
+}
+
 export default redis;
+
